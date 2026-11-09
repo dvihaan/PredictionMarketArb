@@ -15,10 +15,80 @@ python record.py
 ```
 
 ```bash
-python analyze.py
+python analyze_stream.py
 ```
 
-`record.py` runs until Ctrl+C and can be restarted at any time; it appends to `data/books.sqlite`. `analyze.py` can run while it records, and writes every episode to `data/episodes.csv`.
+`record.py` runs until Ctrl+C and can be restarted at any time; it appends to `data/books.sqlite`. Either analyzer can run while it records, and writes every episode to `data/episodes.csv`.
+
+- `analyze_stream.py` reads the database row by row, so memory stays flat. Use it for anything longer than a day or two.
+- `analyze.py` is the original version. It gives identical results but loads every book into memory, so it needs several GB for a multi-week recording.
+
+To copy the database while the recorder is running, use `python backup.py`. Copying `books.sqlite` directly mid-write can produce a broken file.
+
+## Running it on EC2 for 2–4 weeks
+
+Rough cost for 4 weeks in us-east-1: about $8.50 (t4g.nano $2.82, public IPv4 $3.36, 30 GB disk about $2.20). A new AWS account's credits may cover it.
+
+### 1. Launch the instance (AWS console, EC2, Launch instance)
+
+- **Region:** US East (N. Virginia), us-east-1.
+- **AMI:** Amazon Linux 2023, **64-bit (Arm)**.
+- **Instance type:** `t4g.nano`, or `t4g.micro` if it's free-tier eligible on your account.
+- **Key pair:** create one and save the `.pem` file.
+- **Network:** auto-assign a public IP. Allow SSH from **My IP** only; nothing else needs to be open.
+- **Storage:** 30 GB gp3. That leaves room for about 7 GB of data plus a backup copy.
+
+Also set an AWS Budgets alert (for example $15) so a mistake can't run up a bill unnoticed.
+
+### 2. Upload and start (PowerShell on your PC, from this folder)
+
+Replace `KEY` with your `.pem` path and `IP` with the instance's public IP.
+
+```powershell
+ssh -i KEY ec2-user@IP "mkdir -p ~/recorder"
+```
+
+```powershell
+scp -i KEY -r record.py edge.py analyze.py analyze_stream.py backup.py test_edge.py watchlist.json README.md deploy ec2-user@IP:~/recorder/
+```
+
+```powershell
+ssh -i KEY ec2-user@IP "bash ~/recorder/deploy/setup.sh"
+```
+
+`setup.sh` installs Python, adds 1 GB of swap, runs the tests, and does a 20-second live check from the server. Only if both venues answer does it start the recorder as a service, which restarts after crashes and reboots.
+
+### 3. Check on it
+
+```powershell
+ssh -i KEY ec2-user@IP "journalctl -u recorder -n 5 --no-pager; df -h /; free -m"
+```
+
+Healthy output shows a heartbeat line about once a minute with Kalshi and Polymarket at 57/57, and disk use growing a few hundred MB a day. After the first day, check CPU in the EC2 console: it should stay under the t4g.nano's 5% baseline.
+
+### 4. Get the data and analyze it
+
+```powershell
+ssh -i KEY ec2-user@IP "cd ~/recorder && python3 backup.py"
+```
+
+```powershell
+scp -i KEY ec2-user@IP:~/recorder/data/books-copy.sqlite data/books.sqlite
+```
+
+```powershell
+python analyze_stream.py
+```
+
+`analyze_stream.py` can also run on the server: `ssh -i KEY ec2-user@IP "cd ~/recorder && python3 analyze_stream.py"`.
+
+### 5. Shut it down
+
+```powershell
+ssh -i KEY ec2-user@IP "sudo systemctl stop recorder"
+```
+
+Download the data first, then **terminate** the instance in the EC2 console. Stopping it isn't enough, because the disk keeps billing. Terminating also deletes the disk and frees the public IP.
 
 ## Reading the results
 

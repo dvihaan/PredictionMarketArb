@@ -1,0 +1,16 @@
+[Unit]
+Description=Kalshi and Polymarket order book recorder
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=/usr/bin/python3 -u record.py
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
