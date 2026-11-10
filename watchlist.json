@@ -11,10 +11,13 @@
    "kalshi_ticker": "KXHSINCHUCITYMAYOR-26NOV28-AKAO",
    "kalshi_question": "Will Ann Kao win the 2026 Hsinchu City mayoral election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3581626",
    "poly_question": "Will Ann Kao win the next Hsinchu City Mayor election?",
    "poly_yes_token": "33113729317614658724593994337661955840799151281426131061054321667101578860585",
+   "poly_condition_id": "0x1e7ae690a400d22172fa951b2350f399169b6c61a1a61b7b82ff9b37b6abf242",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -26,10 +29,13 @@
    "kalshi_ticker": "KXKAOHSIUNGMAYOR-26NOV28-KOCH",
    "kalshi_question": "Will Ko Chih-en win the 2026 Kaohsiung mayoral election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3581449",
    "poly_question": "Will Ko Chih-en win the next Kaohsiung Mayor election?",
    "poly_yes_token": "53043399992716819851350858048712274949837983659424101945640643932180697048645",
+   "poly_condition_id": "0x133b51a6851a2ee619e841693c0f75f3c3fdc8d75d69eadd3f0c0fe9105c50ee",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -41,10 +47,13 @@
    "kalshi_ticker": "KXKAOHSIUNGMAYOR-26NOV28-LAIJ",
    "kalshi_question": "Will Lai Jui-lung win the 2026 Kaohsiung mayoral election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3581450",
    "poly_question": "Will Lai Jui-lung win the next Kaohsiung Mayor election?",
    "poly_yes_token": "22029023838876968712155982443926116859401230716906372790830186393695843081657",
+   "poly_condition_id": "0xa157fcc18df3d9ca0655349b496c2bda2f13756f69c94d1dbca487863b01486c",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -56,10 +65,13 @@
    "kalshi_ticker": "KXNEWTAIPEIMAYOR-26NOV28-LSCH",
    "kalshi_question": "Will Lee Shu-chuan win the 2026 New Taipei mayoral election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3580994",
    "poly_question": "Will Lee Shu-chuan win the next New Taipei Mayor election?",
    "poly_yes_token": "10653154764049368814330930734869721770637734314871119236238317953965277406484",
+   "poly_condition_id": "0x0ff4131bebd7e76a8d4e10951cf22ed92616ed2b5631d71e80721e7afd94f6ed",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -71,10 +83,13 @@
    "kalshi_ticker": "KXNEWTAIPEIMAYOR-26NOV28-SCHO",
    "kalshi_question": "Will Su Chiao-hui win the 2026 New Taipei mayoral election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3580995",
    "poly_question": "Will Su Chiao-hui win the next New Taipei Mayor election?",
    "poly_yes_token": "42540064588474984309098065010968124137315195387045560256032749423193862593675",
+   "poly_condition_id": "0x598c99fbef3a7d4fb2c3a5af62e67e4ef5f5f7447e966569aee6c917bff12a25",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -86,10 +101,13 @@
    "kalshi_ticker": "KXTAICHUNGMAYOR-26NOV28-HHCH",
    "kalshi_question": "Will Ho Hsin-chun win the 2026 Taichung mayoral election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3581389",
    "poly_question": "Will Ho Hsin-chun win the next Taichung Mayor election?",
    "poly_yes_token": "109154022859656863704237266356795174857416669843727834866047140066258204079083",
+   "poly_condition_id": "0xe232f2c2d14a5ab8275e34cbc068944206df7fa382c279fca0745c8dd0522e0e",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -101,10 +119,13 @@
    "kalshi_ticker": "KXTAINANMAYOR-26NOV28-HHSI",
    "kalshi_question": "Will Hsieh Lung-chieh win the 2026 Tainan mayoral election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3581418",
    "poly_question": "Will Hsieh Lung-chieh win the next Tainan Mayor election?",
    "poly_yes_token": "33948552330823834067563339656870545211885333978940748762093349001659674132755",
+   "poly_condition_id": "0x158304bcdd1ce7e8d15b4600e99f857aee5e233b781c2653367d67394d23e113",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -116,10 +137,13 @@
    "kalshi_ticker": "KXTAIPEIMAYOR-26NOV28-CWAN",
    "kalshi_question": "Will Chiang Wan-an win the 2026 Taipei mayoral election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3580932",
    "poly_question": "Will Chiang Wan-an win the next Taipei Mayor election?",
    "poly_yes_token": "100205215067722297517595068937257697192973299370955287626157382353628199508318",
+   "poly_condition_id": "0xbf7a9da08326512f76129d4accf9f7d852dbf1cb7dd2c512479ff40c872f5659",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -131,10 +155,13 @@
    "kalshi_ticker": "KXLJUBLJANAMAYOR-26NOV15-LMES",
    "kalshi_question": "Will Luka Mesec win the 2026 Ljubljana mayoral election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "5420004",
    "poly_question": "Will Luka Mesec win the 2026 Ljubljana mayoral election?",
    "poly_yes_token": "17369751665634178113720344648216529123743921774085801803913370242724945636013",
+   "poly_condition_id": "0xcf639892d7de2fbab86000fd2bbcaee181b6a9b611664512a415ac16d13dfb4a",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -146,10 +173,13 @@
    "kalshi_ticker": "KXLJUBLJANAMAYOR-26NOV15-ZJAN",
    "kalshi_question": "Will Zoran Janković win the 2026 Ljubljana mayoral election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "5420002",
    "poly_question": "Will Zoran Janković win the 2026 Ljubljana mayoral election?",
    "poly_yes_token": "5120256463293465889277073275291166447801079452194936740107528577653758247331",
+   "poly_condition_id": "0x800f3e6daf118e27174eca2e4c57b3bf435c223655d38ae3008924f024fc411f",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -161,10 +191,13 @@
    "kalshi_ticker": "KXAKSENATE-26NOV03-MPEL",
    "kalshi_question": "Will Mary Peltola win the 2026 Alaska Senate race?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "634976",
    "poly_question": "Will Mary Peltola win the Alaska Senate race in 2026?",
    "poly_yes_token": "72139607190315861034411702195742538105117960260100800877125381826122747504258",
+   "poly_condition_id": "0x19d2ff72e389d190c183e6b114817301d29eba651d67d75a38ee201a05188fd9",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -176,10 +209,13 @@
    "kalshi_ticker": "KXGOVAK-26-JKRE",
    "kalshi_question": "Who will win the governorship in Alaska?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "635016",
    "poly_question": "Will Jonathan Kreiss-Tomkins win the 2026 Alaska governor election?",
    "poly_yes_token": "20244362049417025533374049121400436676833898969884666612361039499958684857530",
+   "poly_condition_id": "0x43cedce4a6af0136d37d53408fc965388baee3145db6da72a5b5da8d2746ced3",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -191,10 +227,13 @@
    "kalshi_ticker": "KXRANKLISTGOOGLESEARCH-26-LIN",
    "kalshi_question": "Will Lindsay Clancy be the #1 rank on Google’s Year in Search 2026 Global - Google’s Year in Search 2026 Global – People list?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "2965188",
    "poly_question": "Will Lindsay Clancy be the #1 searched person on Google this year?",
    "poly_yes_token": "101336879104217791878636147544692375899978911235466810219868978609951784533532",
+   "poly_condition_id": "0x4350034be066b7f44fcec5f1c89fdcc0f9e0a0f34add9f563715ae1515d75b03",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -206,10 +245,13 @@
    "kalshi_ticker": "KXTIME-26-ABD",
    "kalshi_question": "Will Abdul El-Sayed be Time Person of the Year in 2026?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "6723714",
    "poly_question": "Will Abdul El-Sayed be TIME Person of the Year 2026?",
    "poly_yes_token": "75135575254948366050412768839761836314837150345025623188769366659536897588947",
+   "poly_condition_id": "0xf08461cb076abdf86d096a5e4a45af8ca142f5eade2625d9f04528b42ad534b5",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -221,10 +263,13 @@
    "kalshi_ticker": "KXTIME-26-ALE",
    "kalshi_question": "Will Alexandria Ocasio-Cortez be Time Person of the Year in 2026?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "5262639",
    "poly_question": "Will Alexandria Ocasio-Cortez be TIME Person of the Year 2026?",
    "poly_yes_token": "26387194225619385553503961016114493170943112242943435071534032097349589256300",
+   "poly_condition_id": "0x52d44bdfce1c325b9898833ac01d8be6cb831d5f85a1b82cea785aad21abde68",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -236,10 +281,13 @@
    "kalshi_ticker": "KXTIME-26-BER",
    "kalshi_question": "Will Bernie Sanders be Time Person of the Year in 2026?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "5262635",
    "poly_question": "Will Bernie Sanders be TIME Person of the Year 2026?",
    "poly_yes_token": "21022716531966878854280832600479966102818065895563547772083442698010564402301",
+   "poly_condition_id": "0x0aeeb7488ba972277ce0408cbcdde8c45d65af33b756b0ae14cd00f8b3c875e3",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -251,10 +299,13 @@
    "kalshi_ticker": "KXTIME-26-DT",
    "kalshi_question": "Will Donald Trump be Time Person of the Year in 2026?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "2363842",
    "poly_question": "Will Donald Trump be TIME Person of the Year 2026?",
    "poly_yes_token": "55660108007606265786043981619562704583897999652265582673499371383418897683387",
+   "poly_condition_id": "0xba0808fbb35d07e14ecf98e22ca74bc4b5613947f614029432337298af267e4d",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -266,10 +317,13 @@
    "kalshi_ticker": "KXTIME-26-JAM",
    "kalshi_question": "Will James Talarico be Time Person of the Year in 2026?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "2363845",
    "poly_question": "Will James Talarico be TIME Person of the Year 2026?",
    "poly_yes_token": "11851956469848634980207520526898346338982459773540369636173629205859966642440",
+   "poly_condition_id": "0xa55aba6f5c78f51112da71f57888efba75e85840a9afafe42ab9f3dedf8fc338",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -281,10 +335,13 @@
    "kalshi_ticker": "KXTIME-26-MARK",
    "kalshi_question": "Will Mark Carney be Time Person of the Year in 2026?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "4798151",
    "poly_question": "Will Mark Carney be TIME Person of the Year 2026?",
    "poly_yes_token": "19801257871010915928461715426701726678695986988088749487395531360119171753647",
+   "poly_condition_id": "0x5ddf1776820e1f001635f0a48c280bffdd5eb9b526313418aba590f2924ab5e6",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -296,10 +353,13 @@
    "kalshi_ticker": "KXTIME-26-MOH",
    "kalshi_question": "Will Mohammad-Bagher Ghalibaf be Time Person of the Year in 2026?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "2363840",
    "poly_question": "Will Mohammad-Bagher Ghalibaf be TIME Person of the Year 2026?",
    "poly_yes_token": "19529461727473340015632106766376024119061265189139390324721125014506108674892",
+   "poly_condition_id": "0xf9defdfbc645a8a06734f250fbfb37269b43ac50fbc03ff5dc260d90fffa3d22",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -311,10 +371,13 @@
    "kalshi_ticker": "KXTIME-26-MOJ",
    "kalshi_question": "Will Mojtaba Khamenei be Time Person of the Year in 2026?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "4798150",
    "poly_question": "Will Mojtaba Khamenei be TIME Person of the Year 2026?",
    "poly_yes_token": "7447086616240009244549196791097257101387909390912150910213412713825696964252",
+   "poly_condition_id": "0x78dec188011aa0e913ad017a4e377f2f832ca63e14d2adefa5011c3dd3f78cb2",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -326,10 +389,13 @@
    "kalshi_ticker": "KXTIME-26-POP",
    "kalshi_question": "Will Pope Leo XIV be Time Person of the Year in 2026?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "2363843",
    "poly_question": "Will Pope Leo XIV be TIME Person of the Year 2026?",
    "poly_yes_token": "93547204301728188493186073729566863961255963880889581557252027015925549390518",
+   "poly_condition_id": "0xc36f13fb975afe21daa6b863e055b80a0322186fd8af361e4c1a315c92c48d35",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -341,10 +407,13 @@
    "kalshi_ticker": "KXTIME-26-ZOH",
    "kalshi_question": "Will Zohran Mamdani be Time Person of the Year in 2026?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "2363844",
    "poly_question": "Will Zohran Mamdani be TIME Person of the Year 2026?",
    "poly_yes_token": "75219721190829533004296881569889865263645607082195400521306397405990606723860",
+   "poly_condition_id": "0x9c08dd09883c33419b3dc35ee73720c0f69c33246c1c8370f9572279707a40d5",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -356,10 +425,13 @@
    "kalshi_ticker": "KXBILLS-FAKES",
    "kalshi_question": "Will legislation that establishes a federal intellectual-property right protecting individuals’ voices and visual likenesses from unauthorized digital replicas become law before Jan 1, 2027?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "4663527",
    "poly_question": "Will the NO FAKES Act become law this year?",
    "poly_yes_token": "107501064044823466902337243199324134520640869671082221959309515210029877543956",
+   "poly_condition_id": "0x42d8eb18588dc35aeaaab395c95aac7352d42a8078149baab72c8892c8c3dd17",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -371,10 +443,13 @@
    "kalshi_ticker": "KXOSCARACTO-27-AND",
    "kalshi_question": "Will Andrew Scott win Best Actor at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3156940",
    "poly_question": "Will Andrew Scott win Best Actor at the 99th Academy Awards?",
    "poly_yes_token": "9322071482790714035158648227051293523869423306625289778923496471597457415839",
+   "poly_condition_id": "0xaf4af611d36734e463fe735d3168ac189be54202bf35ec92f79f883634383f82",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -386,10 +461,13 @@
    "kalshi_ticker": "KXOSCARACTO-27-ANT",
    "kalshi_question": "Will Anthony Ippolito win Best Actor at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3156946",
    "poly_question": "Will Anthony Ippolito win Best Actor at the 99th Academy Awards?",
    "poly_yes_token": "69738187319445979191797040699705046254221669704961163956393120314198538611682",
+   "poly_condition_id": "0xbdf7179032acee0d25b4091ef6be02c12d30397d25b3ed80805541260f629ad2",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -401,10 +479,13 @@
    "kalshi_ticker": "KXOSCARACTO-27-JOH",
    "kalshi_question": "Will John Malkovich win Best Actor at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3156930",
    "poly_question": "Will John Malkovich win Best Actor at the 99th Academy Awards?",
    "poly_yes_token": "89438220569233700653786035494545528125501584201709340607692661279449521065263",
+   "poly_condition_id": "0x71640c9bcf4ce0442a6d443864660e7dde23e3952387a1234aaf895726b2c755",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -416,10 +497,13 @@
    "kalshi_ticker": "KXOSCARACTO-27-MATT",
    "kalshi_question": "Will Matt Damon win Best Actor at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3156933",
    "poly_question": "Will Matt Damon win Best Actor at the 99th Academy Awards?",
    "poly_yes_token": "81675558127507458434471381337076047694296419921274648357445486235979697017267",
+   "poly_condition_id": "0x84aa4a9a0f2c7dec7d593430685778a0f67f81ce5bde624a842b917b33f4316d",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -431,10 +515,13 @@
    "kalshi_ticker": "KXOSCARACTR-27-JUL",
    "kalshi_question": "Will Julianne Moore win Best Actress at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3157295",
    "poly_question": "Will Julianne Moore win Best Actress at the 99th Academy Awards?",
    "poly_yes_token": "24267163544996140442239946221196996886272499087453231954021872658376535782532",
+   "poly_condition_id": "0x0886c17000a2bf15a759dfef6379dbf907e50ec5dffa462a9bae221578d1a908",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -446,10 +533,13 @@
    "kalshi_ticker": "KXOSCARDIR-27-ALE",
    "kalshi_question": "Will Alejandro G. Iñárritu win Best Director at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3388208",
    "poly_question": "Will Alejandro G. Iñárritu win Best Director at the 99th Academy Awards?",
    "poly_yes_token": "78485940852891057719285369904975102399877459833301299964804631934618946373939",
+   "poly_condition_id": "0x0c4f6d42aa4ad1611467705365bf8a120be6b40d043f26fba2be64a2bde832dc",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -461,10 +551,13 @@
    "kalshi_ticker": "KXOSCARDIR-27-CHRI",
    "kalshi_question": "Will Christopher Nolan win Best Director at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3388205",
    "poly_question": "Will Christopher Nolan win Best Director at the 99th Academy Awards?",
    "poly_yes_token": "76350207604228854349553222832834384108945773505358710701292583536913684983496",
+   "poly_condition_id": "0xb40eb5cd3f4161149aa232e4d9aafb14dafb8e3312a69e94513dbb36df83fe91",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -476,10 +569,13 @@
    "kalshi_ticker": "KXOSCARDIR-27-DEN",
    "kalshi_question": "Will Denis Villeneuve win Best Director at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3388207",
    "poly_question": "Will Denis Villeneuve win Best Director at the 99th Academy Awards?",
    "poly_yes_token": "9688744666446475921543268144372299373527332017524119308078083906592883256007",
+   "poly_condition_id": "0x699a1d645dcc160b5884443846cc9de2af6153267f1fec9599bc44cd2cc2eeae",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -491,10 +587,13 @@
    "kalshi_ticker": "KXOSCARDIR-27-JAV",
    "kalshi_question": "Will Javier Calvo and Javier Ambrossi win Best Director at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3388219",
    "poly_question": "Will Javier Calvo or Javier Ambrossi win Best Director at the 99th Academy Awards?",
    "poly_yes_token": "93432129471068816186473003703165649305527518852360588657577371325834780545633",
+   "poly_condition_id": "0x4a2e4b9641118e0f860ab9277e209b1bed2e1b1f7eec2146892638cc59fbefdd",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -506,10 +605,13 @@
    "kalshi_ticker": "KXOSCARDOCU-27-YOU",
    "kalshi_question": "Will You Can See Everything win Best Documentary Feature Film at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3377276",
    "poly_question": "Will You Can See Everything win Best Documentary Feature Film at the 99th Academy Awards?",
    "poly_yes_token": "41185350119472596893362503279445555979331229089292895274369243607756781539998",
+   "poly_condition_id": "0xb80a1c20e18a3a2babaf682c70df6d3a090ba8f1e9e7cfed4451842eb3f680b0",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -521,10 +623,13 @@
    "kalshi_ticker": "KXOSCARMAH-27-WER",
    "kalshi_question": "Will Werwulf win Best Makeup and Hairstyling at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3377149",
    "poly_question": "Will Werwulf win Best Makeup and Hairstyling at the 99th Academy Awards?",
    "poly_yes_token": "26862865623681921467416857021430601316995218620564605733173499363256811384376",
+   "poly_condition_id": "0xd26d058280551701205738eead2e32e5c30f5101e4928a403eb879b4853bdcfd",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -536,10 +641,13 @@
    "kalshi_ticker": "KXOSCARPIC-27-ART",
    "kalshi_question": "Will Artificial win Best Picture at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3145043",
    "poly_question": "Will Artificial win Best Picture at the 99th Academy Awards?",
    "poly_yes_token": "87105816070408250587387193920027044483048949145097500563796651996737641139950",
+   "poly_condition_id": "0x6ecdc62762f1adee9f137d86907a443b3a54cd838d483cd29f78e92367705b0e",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -551,10 +659,13 @@
    "kalshi_ticker": "KXOSCARPIC-27-DUN",
    "kalshi_question": "Will Dune: Part Three win Best Picture at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3145010",
    "poly_question": "Will Dune: Part Three win Best Picture at the 99th Academy Awards?",
    "poly_yes_token": "43674325341217495599095278148622412266171753951219805121207270556817201390695",
+   "poly_condition_id": "0x871afe29d1648d6a6854a598e02bda1a2572bd141acc1dbe6f09af1b91dc103a",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -566,10 +677,13 @@
    "kalshi_ticker": "KXOSCARPIC-27-ODY",
    "kalshi_question": "Will The Odyssey win Best Picture at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3145011",
    "poly_question": "Will The Odyssey win Best Picture at the 99th Academy Awards?",
    "poly_yes_token": "82017183730405650384104430290945791070039022570334386685934371052148316112285",
+   "poly_condition_id": "0x5d554b8061faaf973115ad48859a04096cd3525873c730964ac7526076315c29",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -581,10 +695,13 @@
    "kalshi_ticker": "KXOSCARPIC-27-WIL",
    "kalshi_question": "Will Wild Horse Nine win Best Picture at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3145013",
    "poly_question": "Will Wild Horse Nine win Best Picture at the 99th Academy Awards?",
    "poly_yes_token": "1222050920236092287210685347092331796262599753558651437864561287602855769263",
+   "poly_condition_id": "0x19522fdccfa33e80238f6687c32870ef8013b1bf896440043888add9989151c4",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -596,10 +713,13 @@
    "kalshi_ticker": "KXOSCARPIC-27-YOU",
    "kalshi_question": "Will You Can See Everything win Best Picture at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3145037",
    "poly_question": "Will You Can See Everything win Best Picture at the 99th Academy Awards?",
    "poly_yes_token": "100757376849492277132821909746555605457515786857395729851351563483016663901152",
+   "poly_condition_id": "0x93e8902bf20d0c1097f232a20d4c63b3ace27f624c4f198c0eb48d148b6cfff5",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -611,10 +731,13 @@
    "kalshi_ticker": "KXOSCARSUPACTO-27-PAU",
    "kalshi_question": "Will Paul Giamatti win Best Supporting Actor at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3377554",
    "poly_question": "Will Paul Giamatti win Best Supporting Actor at the 99th Academy Awards?",
    "poly_yes_token": "70274777435946038089786491288844824543175358517208060833343750044259825395277",
+   "poly_condition_id": "0x395f807cf5f7c4b64e64c6064067d69cc48a3d460eaeb3d528c4d896423799c8",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -626,10 +749,13 @@
    "kalshi_ticker": "KXOSCARSUPACTR-27-AMA",
    "kalshi_question": "Will Amanda Seyfried win Best Supporting Actress at the Oscars?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "3377511",
    "poly_question": "Will Amanda Seyfried win Best Supporting Actress at the 99th Academy Awards?",
    "poly_yes_token": "59323401503993166618699618333218908935443629353684499453783704041183910488474",
+   "poly_condition_id": "0x27173354c6af8b2565e4bb20e55e82bf370a2b3097c133b2ba5d961b52700be4",
    "poly_fee_rate": 0.05,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -641,10 +767,13 @@
    "kalshi_ticker": "KXFRPRESBALLOT-27JUN30-EPHI",
    "kalshi_question": "Will Édouard Philippe appear on the official candidate list for the first round of the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "2054226",
    "poly_question": "Will Édouard Philippe be on the ballot for the 2027 French presidential election?",
    "poly_yes_token": "16012696160155626522186558850012056837092159839091646459794947761234922917246",
+   "poly_condition_id": "0xb73b23b135bb40488931bbb9bde2a0a01c288c5896afb6d8baafcb3984840b35",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -656,10 +785,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-BRET",
    "kalshi_question": "Will Bruno Retailleau win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679027",
    "poly_question": "Will Bruno Retailleau win the 2027 French presidential election?",
    "poly_yes_token": "76158784025338420583901765224531190025719662766883390440253608804161057467141",
+   "poly_condition_id": "0xc32a544f65e3a8ffec6499e40290f10fa68a3f4a4819dfd366b6cb1fd7c4be1d",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -671,10 +803,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-CLAG",
    "kalshi_question": "Will Christine Lagarde win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679060",
    "poly_question": "Will Christine Lagarde win the 2027 French presidential election?",
    "poly_yes_token": "99240068351455574729467629800805892674088563638353047506523604209057843144195",
+   "poly_condition_id": "0xf273da5c76e0116c0ec63787453b54d74f0c182256dff4ed2f27f08b14048f7c",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -686,10 +821,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-DLIS",
    "kalshi_question": "Will David Lisnard win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679022",
    "poly_question": "Will David Lisnard win the 2027 French presidential election?",
    "poly_yes_token": "55404192439775628931124671719520886657525387168536821457706619003199189099864",
+   "poly_condition_id": "0xce610556ec78cfd7894f4169d91fe70e31c2fb49f927fffd7fe7d06530f88d56",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -701,10 +839,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-DVIL",
    "kalshi_question": "Will Dominique de Villepin win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679034",
    "poly_question": "Will Dominique de Villepin win the 2027 French presidential election?",
    "poly_yes_token": "94391324985187701312427605791553049327097814064787849723991205429060004737042",
+   "poly_condition_id": "0x20fd4cf096367edbd429168764db975b582249a7a3818684d051f445a3efaed1",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -716,10 +857,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-EPHI",
    "kalshi_question": "Will Édouard Philippe win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679021",
    "poly_question": "Will Édouard Philippe win the 2027 French presidential election?",
    "poly_yes_token": "84846382165343032223975853870946110241285484772019446686866815597350660955868",
+   "poly_condition_id": "0x46f2f457e14ee9021ebd0ef4c27eacd98fdceaf7f2938b484e2551e9e3275ae8",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -731,10 +875,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-EZEM",
    "kalshi_question": "Will Éric Zemmour win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679020",
    "poly_question": "Will Éric Zemmour win the 2027 French presidential election?",
    "poly_yes_token": "51126599157451146230415396920771455069752975116525743821340393650626382714261",
+   "poly_condition_id": "0x290b3a5826b17e48ae7166b188767d95df5a9ed0b69fda116d98d0d27d753281",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -746,10 +893,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-FHOL",
    "kalshi_question": "Will François Hollande win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679028",
    "poly_question": "Will François Hollande win the 2027 French presidential election?",
    "poly_yes_token": "35420390481420086914303850503269939905315993511859334440549793606783994509563",
+   "poly_condition_id": "0xa203cc908da0d417590e01f89fb651a335650d6b797da76ac28726d5f8c7610b",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -761,10 +911,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-GATT",
    "kalshi_question": "Will Gabriel Attal win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679026",
    "poly_question": "Will Gabriel Attal win the 2027 French presidential election?",
    "poly_yes_token": "39040993339692011893931540077322383339631602451525460031216774971808386681386",
+   "poly_condition_id": "0x6189539ff1b08bc4052607d89921663ca0de0f0cd70b79c9993d7f9f3211ec3e",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -776,10 +929,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-JBAR",
    "kalshi_question": "Will Jordan Bardella win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679019",
    "poly_question": "Will Jordan Bardella win the 2027 French presidential election?",
    "poly_yes_token": "1114938555853162662375805609341386795965961002028313810409954359771505507177",
+   "poly_condition_id": "0x1166388a24a3f2a9bb0a45956bdb205c70f0ecafb8539e277a57adf022e306be",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -791,10 +947,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-JMEL",
    "kalshi_question": "Will Jean-Luc Mélenchon win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679030",
    "poly_question": "Will Jean-Luc Mélenchon win the 2027 French presidential election?",
    "poly_yes_token": "88550326946437280548248031502775629664259630024343210447063397951616199975032",
+   "poly_condition_id": "0x174ea87d011bfd0b230efc45e0b4d0756d38af91f0ffbab70013a582603c2be8",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -806,10 +965,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-MLEP",
    "kalshi_question": "Will Marine Le Pen win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679018",
    "poly_question": "Will Marine Le Pen win the 2027 French presidential election?",
    "poly_yes_token": "55764212211467781322980371912612507865974994976253196346176314491480419639168",
+   "poly_condition_id": "0x8126317d621047fb13d508a2651eecc8d38305904671822a62309c5aabd353aa",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -821,10 +983,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-RGLU",
    "kalshi_question": "Will Raphaël Glucksmann win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679029",
    "poly_question": "Will Raphaël Glucksmann win the 2027 French presidential election?",
    "poly_yes_token": "97531408855841405410232789703119036119573635076996943730887685044477538494161",
+   "poly_condition_id": "0xcfc6e088b78e695e831e094f7aa1197c16b2436e5984b12fb9286361804b8e1b",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -836,10 +1001,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-SKNA",
    "kalshi_question": "Will Sarah Knafo win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679051",
    "poly_question": "Will Sarah Knafo win the 2027 French presidential election?",
    "poly_yes_token": "66728948856278657077046599284055693271321320423192674643305547174515874533859",
+   "poly_condition_id": "0x12c5b5e4701f172a6045b97eda70f0897aaf6adf566e6f0dc722996ac80b8b81",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   },
   {
@@ -851,10 +1019,13 @@
    "kalshi_ticker": "KXFRENCHPRES-27-SLEC",
    "kalshi_question": "Will Sébastien Lecornu win the 2027 French presidential election?",
    "kalshi_fee_rate": 0.07,
+   "kalshi_maker_fee_rate": 0.0,
    "poly_market_id": "679054",
    "poly_question": "Will Sébastien Lecornu win the 2027 French presidential election?",
    "poly_yes_token": "56479574037559870494474863426788778064776404338812899351171813846265674472432",
+   "poly_condition_id": "0x934225abdf22ea08692f5411dd43ea16d859e7b30b880dbe521d8fc2cc3f013f",
    "poly_fee_rate": 0.04,
+   "poly_maker_fee_rate": 0.0,
    "poly_min_order": 5.0
   }
  ]

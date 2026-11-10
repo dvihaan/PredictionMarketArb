@@ -22,6 +22,7 @@ fi
 
 echo "== Running edge math tests"
 python3 test_edge.py
+python3 test_maker.py
 
 echo "== 20-second live check from this server"
 SMOKE=/tmp/recorder-smoke.sqlite

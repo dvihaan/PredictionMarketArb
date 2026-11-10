@@ -1,6 +1,11 @@
 # Prediction market book recorder
 
-Records public Kalshi and Polymarket order books for the rule-checked pairs in `watchlist.json`, then measures how often a hedged pair was profitable after fees, at what size, and for how long. It is read-only: it uses no API keys and places no orders.
+Records public Kalshi and Polymarket order books and trades for the rule-checked pairs in `watchlist.json`, then measures two things:
+
+- **Taker on both legs** (`analyze_stream.py`): how often a hedged pair was profitable after fees, at what size, and for how long.
+- **Maker on one leg** (`analyze_maker.py`): what a resting bid on one venue, hedged as a taker on the other, would have been filled for and earned.
+
+It is read-only: it uses no API keys and places no orders.
 
 ## Use
 
@@ -11,6 +16,10 @@ python test_edge.py
 ```
 
 ```bash
+python test_maker.py
+```
+
+```bash
 python record.py
 ```
 
@@ -18,10 +27,16 @@ python record.py
 python analyze_stream.py
 ```
 
+```bash
+python analyze_maker.py
+```
+
 `record.py` runs until Ctrl+C and can be restarted at any time; it appends to `data/books.sqlite`. Either analyzer can run while it records, and writes every episode to `data/episodes.csv`.
 
 - `analyze_stream.py` reads the database row by row, so memory stays flat. Use it for anything longer than a day or two.
 - `analyze.py` is the original version. It gives identical results but loads every book into memory, so it needs several GB for a multi-week recording.
+
+Trades are polled once a minute in the background and carry their own timestamps, so a restart backfills what was missed, back to the first recorded book. `--trade-interval 0` records books only.
 
 To copy the database while the recorder is running, use `python backup.py`. Copying `books.sqlite` directly mid-write can produce a broken file.
 
@@ -49,7 +64,7 @@ ssh -i KEY ec2-user@IP "mkdir -p ~/recorder"
 ```
 
 ```powershell
-scp -i KEY -r record.py edge.py analyze.py analyze_stream.py backup.py test_edge.py watchlist.json README.md deploy ec2-user@IP:~/recorder/
+scp -i KEY -r record.py edge.py maker.py analyze.py analyze_stream.py analyze_maker.py backup.py test_edge.py test_maker.py watchlist.json README.md deploy ec2-user@IP:~/recorder/
 ```
 
 ```powershell
@@ -80,7 +95,7 @@ scp -i KEY ec2-user@IP:~/recorder/data/books-copy.sqlite data/books.sqlite
 python analyze_stream.py
 ```
 
-`analyze_stream.py` can also run on the server: `ssh -i KEY ec2-user@IP "cd ~/recorder && python3 analyze_stream.py"`.
+Then run `python analyze_maker.py` for the maker results. `analyze_stream.py` can also run on the server: `ssh -i KEY ec2-user@IP "cd ~/recorder && python3 analyze_stream.py"`.
 
 ### 5. Shut it down
 
@@ -97,11 +112,22 @@ Download the data first, then **terminate** the instance in the EC2 console. Sto
 - Edges are measured from books fetched moments apart, so they may not have been fillable together. Gaps shorter than the polling interval (5 s by default) are invisible.
 - A book row is only written when that book changes. Failed fetches are logged per cycle, so unchanged data and missing data stay distinct.
 
+### Maker results (`analyze_maker.py`)
+
+Each pair gets four standing quotes: a bid for YES or NO, resting on Kalshi or on Polymarket. A quote joins the best bid whenever the hedged edge clears the hurdle (`--min-ann`, default 10% annualized to resolution, and `--min-edge` in cents). Every fill is written to `data/maker_fills.csv`.
+
+- **Two fill models.** `queue` fills the quote once trades at its price have used up the size that was ahead of it. `through` fills only when a trade prints past its price. Treat `through` as the floor and `queue` as the optimistic case.
+- **Quoted vs realized edge.** Quoted is the edge seen when the quote was placed. Realized uses the hedge price in the first book recorded after the fill, so the difference is what adverse selection and the hedge delay cost.
+- **Not modelled:** the simulated quote does not change the market, positions are not capped, capital sitting idle on two venues earns nothing, and Polymarket's liquidity rewards and maker rebates are left out. Polymarket reports one averaged price per taker order, so some fills at the quote's price are missed.
+- The simulation stops where trade coverage stops, so run it after the recorder has been up for a minute or two.
+
 ## Watchlist
 
 `rule_status` records how each pair was checked:
 
 - `read-close`: rules read on this pair or a same-event sibling, and judged close to equivalent.
 - `template-read`: rules read on one pair in the family, with the same wording assumed for the rest.
+
+`poly_condition_id` is needed to fetch Polymarket trades. The maker fee rates were 0 on both venues when checked on 2026-11-10 (Kalshi `fee_type` "quadratic", Polymarket `takerOnly` fees); re-check them along with the taker rates.
 
 Neither status clears a pair for trading. Read both venues' full rules first, because this list was built by comparing rule text on a few pairs, not all pairs.

@@ -1,0 +1,8 @@
+model,pair_id,family,maker_venue,side,fill_utc,kind,price,size,hedged,hedge_delay_s,quoted_edge_c,realized_edge_c,profit,capital,annualized_pct,est_resolution,kalshi_question
+queue,KXNEWTAIPEIMAYOR-26NOV28-SCHO,taiwan_mayors,kalshi,no,2026-11-09 18:13:38,through,0.35,47.47,47.47,4.6,2.06,-1.9,-0.9,48.37,-37.3,2026-11-28,Will Su Chiao-hui win the 2026 New Taipei mayoral election?
+queue,KXTIME-26-ZOH,time_poy,kalshi,no,2026-11-09 19:57:57,through,0.76,50.0,50.0,3.4,1.14,1.14,0.57,49.43,12.0,2026-12-15,Will Zohran Mamdani be Time Person of the Year in 2026?
+queue,KXRANKLISTGOOGLESEARCH-26-LIN,google_yis,kalshi,no,2026-11-09 19:59:59,touch,0.67,12.87,12.87,1.6,1.95,1.95,0.25,12.62,20.6,2026-12-15,Will Lindsay Clancy be the #1 rank on Google’s Year in Search 2026 Global - Google’s Year in Search 2026 Global – People list?
+queue,KXRANKLISTGOOGLESEARCH-26-LIN,google_yis,kalshi,no,2026-11-09 20:04:53,through,0.67,0.9,0.9,2.2,1.95,1.95,0.02,0.88,20.6,2026-12-15,Will Lindsay Clancy be the #1 rank on Google’s Year in Search 2026 Global - Google’s Year in Search 2026 Global – People list?
+through,KXNEWTAIPEIMAYOR-26NOV28-SCHO,taiwan_mayors,kalshi,no,2026-11-09 18:13:38,through,0.35,47.47,47.47,4.6,2.06,-1.9,-0.9,48.37,-37.3,2026-11-28,Will Su Chiao-hui win the 2026 New Taipei mayoral election?
+through,KXTIME-26-ZOH,time_poy,kalshi,no,2026-11-09 19:57:57,through,0.76,50.0,50.0,3.4,1.14,1.14,0.57,49.43,12.0,2026-12-15,Will Zohran Mamdani be Time Person of the Year in 2026?
+through,KXRANKLISTGOOGLESEARCH-26-LIN,google_yis,kalshi,no,2026-11-09 20:04:53,through,0.67,0.9,0.9,2.2,1.95,1.95,0.02,0.88,20.6,2026-12-15,Will Lindsay Clancy be the #1 rank on Google’s Year in Search 2026 Global - Google’s Year in Search 2026 Global – People list?
