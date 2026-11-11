@@ -217,6 +217,19 @@ def poll_trades(pairs, marks, default_ms, interval, out, stop):
         stop.wait(interval)
 
 
+def keep_awake():
+    """Ask Windows not to sleep while this process runs. Does nothing on other systems.
+
+    The request ends with the process. It cannot stop a closed lid, the power button or a
+    Windows Update restart from interrupting the recording.
+    """
+    if os.name != "nt":
+        return False
+    import ctypes
+    es_continuous, es_system_required = 0x80000000, 0x00000001
+    return bool(ctypes.windll.kernel32.SetThreadExecutionState(es_continuous | es_system_required))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--watchlist", default=os.path.join(HERE, "watchlist.json"))
@@ -263,6 +276,9 @@ def main():
         threading.Thread(target=poll_trades, daemon=True,
                          args=(pairs, marks, first_cycle or now_ms(), args.trade_interval, trade_queue, stop)).start()
 
+    if keep_awake():
+        print("Holding this PC awake while recording. Closing the lid or a Windows Update restart can still stop it.",
+              flush=True)
     print(f"Recording {len(pairs)} pairs every {args.interval:g}s to {args.db}. Press Ctrl+C to stop.", flush=True)
     t_start = time.monotonic()
     next_at = t_start

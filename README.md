@@ -38,6 +38,8 @@ python analyze_maker.py
 
 Trades are polled once a minute in the background and carry their own timestamps, so a restart backfills what was missed, back to the first recorded book. `--trade-interval 0` records books only.
 
+On Windows the recorder asks the system not to sleep while it runs. That does not cover closing the lid, the power button, or a Windows Update restart, so leave the lid open and pause updates for a long local run.
+
 To copy the database while the recorder is running, use `python backup.py`. Copying `books.sqlite` directly mid-write can produce a broken file.
 
 ## Running it on EC2 for 2–4 weeks
