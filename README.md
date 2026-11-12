@@ -133,3 +133,15 @@ Each pair gets four standing quotes: a bid for YES or NO, resting on Kalshi or o
 `poly_condition_id` is needed to fetch Polymarket trades. The maker fee rates were 0 on both venues when checked on 2026-11-10 (Kalshi `fee_type` "quadratic", Polymarket `takerOnly` fees); re-check them along with the taker rates.
 
 Neither status clears a pair for trading. Read both venues' full rules first, because this list was built by comparing rule text on a few pairs, not all pairs.
+
+## Daily update by email
+
+`digest.py` writes a plain-text summary of the recorder's status, new commits and uncommitted changes, and new episodes and maker fills to `.digest/latest.txt`. It sends nothing by itself.
+
+A scheduled task, `predictionmarketarb-daily-update`, runs every day at 09:00 local time. It runs `python digest.py`, emails the text from `vihaand23@agentmail.to` to `hudyclaude@agentmail.to` with the AgentMail tools, and then runs `python digest.py --mark-sent`, so the next digest shows only new items. If the send fails, it does not mark the digest, and the same items go out next time.
+
+To run the digest by hand:
+
+```bash
+python digest.py
+```
