@@ -226,9 +226,13 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
   - Processing today never saves end-of-day books; only a past day does, enforced in `process_day` with a regression test. A mid-day snapshot saved as "end of day" would corrupt the next day if a nightly run failed.
   - `pma-refresh.timer` runs at 03,06,09,12,15,18,21:15 UTC (00:xx is left to the nightly job at 00:31) and sends no NightlyOK. Both jobs take `flock /opt/pma/data/compact.lock`, so they never overlap.
   - Cost: each refresh reprocesses today from midnight, ~5–7 min for a full day (estimate), within the nano's CPU allowance at this frequency
-  - [ ] Push, then `infra/update.sh`. The update restarts the recorder (a few-second gap, logged in coverage).
+  - [x] Pushed (`001cd9e`, auto-synced); Binoy ran `infra/update.sh`. Server on `001cd9e`; recorder restarted 22:01:18 UTC (few-second gap). Timers: nightly 00:30 UTC, refresh 03:15 UTC; `systemd-analyze` confirms the calendar expression.
   - [ ] Delete the mid-day checkpoint `curated/_state/books/date=2026-11-16.json` left by the earlier one-off run (written before this rule existed), so a failed nightly run can't pick it up
-  - [ ] Check the timers on the server and the first refresh's duration and memory peak
+  - [x] Ran `pma-refresh` once by hand (22:05 UTC): success.
+    - 2026-11-16 so far: Kalshi 31,929 and Polymarket 285,853 book rows; 53 s wall and 39 CPU-s for ~2.4 h of data
+    - "day in progress: end-of-day books not saved", as designed
+    - Extrapolation: ~6–7 min for a full day; ~30 CPU-min/day for 7 refreshes plus the nightly run, against ~144 CPU-min/day of t4g.nano baseline
+    - Memory peak isn't reported by systemd for this unit; check during the nightly run
 - [ ] 6.4 Stop the service; confirm the alarm email arrives (after both subscriptions are confirmed)
 - [ ] 6.5 Activate cost-allocation tags in Billing (manual); check Cost Explorer after 24 h. `Project` is already active; `environment` and `owner` are optional.
 
