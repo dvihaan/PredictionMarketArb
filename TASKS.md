@@ -146,7 +146,7 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 
 **Venue server locations** (third-party latency monitor; neither venue publishes them): Polymarket → AWS eu-west-2 (London), Kalshi → AWS us-east-2 (Ohio). The recorder stores each venue's server timestamps, so cross-venue alignment doesn't depend on where it runs.
 
-- [ ] 5.0 Binoy copies the Kalshi SSM parameters from us-east-1 to **us-east-2** and tags them `Project`/`environment`/`owner` (commands given 2026-11-16). Whether to keep or delete the us-east-1 copies is his call.
+- [x] 5.0 Binoy copied the Kalshi SSM parameters to **us-east-2** (2026-11-16) and deleted the us-east-1 originals. Verified: both are SecureString/Standard, tagged `Project`/`environment`/`owner`, the private key is a complete PEM, and a signed read-only Kalshi request using the us-east-2 key returned HTTP 200.
 - [x] 5.1 `infra/stack.yaml` (CloudFormation, us-east-2): written; `cfn-lint` clean; accepted by `aws cloudformation validate-template`
   - **Network:** a dedicated VPC `10.42.0.0/24` with one public subnet, an internet gateway and a free S3 gateway endpoint; no NAT gateway
   - **Storage:** S3 bucket `prediction-market-arb-<account>-<region>` (private, Block Public Access, TLS-only, SSE-S3, `DeletionPolicy: Retain`, Standard forever); `athena-results/` expires after 7 days
