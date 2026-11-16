@@ -22,8 +22,10 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
 - [ ] 1.1 Confirm the WebSocket message formats against live endpoints and save sample messages as test fixtures
   - [ ] Polymarket market channel: `book`, `price_change`, `last_trade_price`, `tick_size_change`; per-connection asset limit
   - [ ] Kalshi: handshake signing (Ed25519), `orderbook_snapshot`/`orderbook_delta` seq semantics, `trade` channel; per-subscription market limit (needs key, Stage 1.0)
-- [?] 1.0 Kalshi API key from Binoy's account → read-only scoped key (`scopes: ["read"]`) → SSM Parameter Store. Blocked on account creation.
-  - [ ] Write `tools/kalshi_readonly_key.py` (use the full-access key to generate a read-only key, then instruct deleting the original)
+- [~] 1.0 Kalshi API key from Binoy's account
+  - [x] Read-only key created on kalshi.com with Binoy's own RSA public key (`dbinoy-api-key`, Key ID `b496ed3a-…21da`, 2026-11-15). Private key stays at `~/.kalshi/kalshi_private.pem`. The website offers a read-only option, so the scope-reduction script isn't needed.
+  - [ ] Check that a signed read request and the WebSocket handshake work despite the "Verify your location" notice, from the Mac and later from AWS us-east-1
+  - [ ] Store the Key ID and private key in SSM Parameter Store (SecureString) at deploy time (Stage 6)
 - [ ] 1.2 `recorder/books.py`: rebuild books from snapshots and deltas, top 25 levels; resync on a seq gap. Unit tests.
 - [ ] 1.3 `recorder/poly_ws.py`, `recorder/kalshi_ws.py`: connect, subscribe, reconnect with backoff, heartbeat
 - [ ] 1.4 `recorder/sink.py`: gzip JSONL raw files rotated every 5 min; upload to S3 (or a local dir in dev)
@@ -87,6 +89,7 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
 | 2026-11-15 | Storage: S3 Standard, kept forever | Binoy |
 | 2026-11-15 | Analysis: Athena + Glue; port Vihaan's analyzers | Binoy |
 | 2026-11-15 | Replace the AgentMail digest with CloudWatch alarms → SNS email | Binoy |
+| 2026-11-15 | Kalshi key: Binoy's own RSA key pair, created read-only on the website (private key never leaves his machine) | Binoy |
 
 ## Open questions
 1. **Recorded data is in git.** `data/books.sqlite` (86 MB) and its `-wal`/`-shm` files are committed. GitHub warns on files over 50 MB and blocks files over 100 MB. Proposal: stop tracking `data/` on this branch (`git rm --cached` + `.gitignore`) after migrating to S3. Purging it from git history is a destructive rewrite; Binoy and Vihaan decide.
