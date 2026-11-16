@@ -184,7 +184,7 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 - [x] 6.1 `infra/deploy.sh` (password → `cloudformation deploy` → upload pages) and `infra/update.sh` (SSM → `pma-update`). The planned `infra/teardown.sh` is not written yet.
 - [x] 6.2 Local smoke tests done in Stage 1: live runs on the Mac; Kalshi rebuilt books matched REST; Polymarket mismatches caught and repaired
 - [~] 6.3 First deploy (Binoy ran `deploy.sh`, 2026-11-16 19:11 UTC): stack `prediction-market-arb` **CREATE_COMPLETE** in us-east-2 with no failures. The budget deployed fine from us-east-2.
-  - Outputs: web `https://d2wfqni2tgigmk.cloudfront.net`, bucket `prediction-market-arb-<account>-us-east-2`, instance `i-0f34f7009abfee82f`, workgroup `prediction-market-arb`, database `prediction_market_arb`
+  - Outputs: web address (CloudFront; printed by `deploy.sh`, kept out of the public repo), bucket `prediction-market-arb-<account>-us-east-2`, instance `i-0f34f7009abfee82f`, workgroup `prediction-market-arb`, database `prediction_market_arb`
   - **Bug: server self-install failed.** On the t4g.nano (412 MB usable), `dnf install git` in UserData was OOM-killed ("Killed"). Swap was only created later, in setup.sh, so the boot script stopped before the clone and nothing was installed.
     - Fix: UserData creates 1 GB of swap before any `dnf`; setup.sh's swap step skips if it exists
     - Changing UserData creates a new launch template version, so the next deploy **replaces the instance** (the failed one holds no data)
