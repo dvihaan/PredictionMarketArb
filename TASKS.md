@@ -113,7 +113,7 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-16 | Recorder runs as one Python process with independent per-venue connection tasks that reconnect on their own | Binoy |
 | 2026-11-16 | Polymarket gap check: compare against REST books every **120 s** (configurable); on mismatch, log it and re-subscribe for a fresh snapshot | Binoy |
 | 2026-11-16 | Server runtime: Python 3.12 from the Amazon Linux 2023 repo; develop and test locally on 3.12 | Binoy |
-| 2026-11-16 | Polymarket: subscribe to **both** YES and NO tokens and keep both books as sent | Binoy |
+| 2026-11-16 | ~~Polymarket: subscribe to both YES and NO tokens~~ **Revised the same day:** YES token only. The NO book is an exact mirror (full depth matched on 3 pairs, mirror held after 91 live changes, shared exchange). NO-token trades still come from the REST trade history; the 120 s REST check catches any divergence. | Binoy |
 | 2026-11-16 | The number of watched pairs comes from the pairs file and isn't hard-coded; it changes on reload | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
