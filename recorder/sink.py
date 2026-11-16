@@ -13,6 +13,7 @@ after a crash it is readable up to the last flush. Closed files lose the ".part"
 then safe to upload. On start, leftover ".part" files from a crash are closed out the same way.
 """
 import gzip
+import io
 import json
 import os
 import socket
@@ -102,9 +103,9 @@ def closed_files(out_dir):
 
 
 def read_lines(path):
-    """Read a raw file, tolerating a truncated tail left by a crash."""
+    """Read a raw file (a path, or its bytes), tolerating a truncated tail left by a crash."""
     out = []
-    with gzip.open(path, "rb") as f:
+    with gzip.open(io.BytesIO(path) if isinstance(path, bytes) else path, "rb") as f:
         try:
             for line in f:
                 if line.endswith(b"\n"):

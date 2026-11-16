@@ -14,9 +14,9 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
 **Repository layout** (since 2026-11-16)
 | Folder | Contents |
 |---|---|
-| `recorder/` | Live WebSocket recorder that runs on EC2 (`python -m recorder.main`) |
+| `recorder/` | Everything that runs on EC2: the live recorder (`python -m recorder.main`) and the nightly processing job (`python -m recorder.compact`), which share the book-rebuild code |
 | `analysis/` | Vihaan's edge/maker math and analyzers (`edge.py`, `maker.py`, `analyze_stream.py`, `analyze_maker.py`) |
-| `tools/` | One-off utilities, not part of the running system (`probe_ws.py`) |
+| `tools/` | One-off utilities, not part of the running system (`probe_ws.py`, `migrate_sqlite.py`) |
 | `tests/` | All tests, incl. Vihaan's `test_edge.py`/`test_maker.py`; captured messages in `tests/fixtures/` |
 | `infra/` | CloudFormation and deploy scripts (Stage 5) |
 | `docs/` | Architecture plan, Kalshi key guide |
@@ -97,9 +97,29 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
   - [ ] Watch the mismatch rate over the first days on AWS. Early runs show roughly 1 mismatch per 30 s check across 56 books, each a single level. Investigate whether it's always the same pattern (a `price_change` that Polymarket's own book never includes).
 
 ## Stage 2 — Compaction & migration
-- [ ] 2.1 `compact.py`: raw → curated Parquet (`books`, `trades`, `coverage`), idempotent per date
-- [ ] 2.2 `migrate_sqlite.py`: existing `data/books.sqlite` → curated Parquet; check row counts
-- [ ] 2.3 Define the `ref/pairs` (versioned, `valid_from`/`valid_to`) and `ref/markets` (metadata, rules, settlement) schemas
+- [x] 2.0 Measured data volume from the live run (57 pairs): about **29 msgs/s, ~350 MB/day of compressed raw files (~10 GB/month)**. The Polymarket feed is ~230 MB/day and the REST checks ~84 MB/day at 30 s. The plan estimated under 1 GB/month (made before the switch to WebSockets). S3 Standard ≈ $0.24/month per month of raw data kept. Re-measure on AWS: this sample is 150 s at one time of day.
+- [x] 2.1 `recorder/compact.py` (nightly job: `python -m recorder.compact --store <dir|s3://bucket> [--date D] [--days N] [--pairs <file>]`)
+  - Replays one UTC day's raw messages through `recorder/books.py`, the same code the recorder runs live
+  - Outputs, each overwritten on re-run, so the job is idempotent:
+    - `curated/books/venue=/date=/part-0.parquet`: one row per book change, top 25 levels. Columns: `ts_ms` (our receive time), `server_ms`, `market`, `yes_bids`, `no_bids` (list of {price, size}), `source` (snapshot/delta/rest_repair), `suspect`
+    - `curated/trades/venue=/date=<trade date>/part-0.parquet`: merged into the trade's own date and de-duplicated on `trade_id`; REST rows win over WS rows
+    - `curated/coverage/date=/part-0.parquet`: recorder events, with details as JSON
+  - Book state carries across days via `curated/_state/books/date=D.json`. A missing previous day is processed first, up to 7 days back.
+  - Suspect rows. Kalshi: from a `resync` until the market's fresh snapshot. Polymarket: from the last REST check that matched until the confirmed mismatch. At the mismatch, a `rest_repair` row applies Polymarket's REST book.
+  - Verified on live data: both repairs exactly matched the fresh snapshot Polymarket sent ~110 ms later
+  - Size: Polymarket's curated books are ~90–115 MB/day (top-25 levels repeated on every change). Sorting by market would only save 1.3×, so rows stay in time order for single-pass replay.
+  - `recorder/store.py`: the same interface over a local directory or S3. `sink.read_lines` also accepts file bytes.
+  - `tests/test_compact.py`: 8 tests (day carry-over, catch-up, Kalshi resync flags, Polymarket flag-and-repair, NO entries ignored, trade de-duplication across days, identical re-runs, coverage JSON)
+- [x] 2.2 `tools/migrate_sqlite.py`: Vihaan's SQLite data → curated tables as `part-legacy.parquet`, so it can't collide with the nightly job's files. Book rows get `source = rest_poll`; polling cycles become `poll_cycle` coverage events.
+  - Verified: books 28,660 + 84,839, trades 7,588 + 3,912 and 7,232 cycles all reconcile 1:1; a spot-checked row matches exactly; 86 MB SQLite → 5.5 MB Parquet
+  - [ ] Run it against S3 once the bucket exists (Stage 6)
+- [x] 2.3 Reference data (`recorder/refdata.py`, run by the nightly job with `--pairs`):
+  - `ref/pairs/date=D/pairs.json`, plus each venue's full market record per watched market in `ref/markets/date=D/{kalshi,poly}.jsonl.gz` (title, rules text, status, settlement result)
+  - D is the date fetched, since the venues only serve current metadata. Intraday pair changes are visible in `pairs_reloaded` coverage events.
+  - Verified live: 57 + 57 records, 0 errors; Kalshi already shows `KXGOVAK-26-JKRE` finalized with result `yes`
+  - `valid_from`/`valid_to` versioning of pairs is deferred to Stage 4, where the pair-discovery agent maintains the list
+- [ ] 2.4 Nightly schedule on EC2: a systemd timer, defined in Stage 5's instance setup
+- Total tests: 61 passing (36 new + Vihaan's 25)
 
 ## Stage 3 — Analyzers
 - [ ] 3.1 `store.py`: DuckDB reader over a local dir or `s3://`
@@ -169,6 +189,10 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-16 | Polymarket REST check interval lowered from 120 s to **30 s** after live runs showed feed divergences | Binoy |
 | 2026-11-16 | Old files are kept with a do-not-use header rather than deleted; first renamed with a `_deprecated` suffix, then (same day) moved into a `deprecated/` folder under their original names | Binoy |
 | 2026-11-16 | Repository organized by role: `recorder/`, `analysis/`, `tools/`, `tests/`, `infra/`, `docs/`, `deprecated/`; compiled caches untracked | Binoy |
+| 2026-11-16 | Nightly processing runs on the recorder's EC2 instance (systemd timer), not Lambda or locally | Binoy |
+| 2026-11-16 | Clean book table: one row per book change, top 25 levels (Vihaan's format) | Binoy |
+| 2026-11-16 | Polymarket mismatch windows: **flag and repair** (`suspect` column + a `rest_repair` row with the REST book) | Binoy |
+| 2026-11-16 | Parquet written with pyarrow (zstd); nightly job lives in `recorder/`, next to the code it shares; SQLite migration in `tools/` | Claude default; Binoy can change |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions

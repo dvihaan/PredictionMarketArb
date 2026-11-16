@@ -3,3 +3,4 @@ websockets==17.4
 requests==2.34.2
 cryptography==50.0.2
 boto3==1.44.3
+pyarrow==26.0.1
