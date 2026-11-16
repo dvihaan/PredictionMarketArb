@@ -184,14 +184,33 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 - [x] 6.1 `infra/deploy.sh` (password → `cloudformation deploy` → upload pages) and `infra/update.sh` (SSM → `pma-update`). The planned `infra/teardown.sh` is not written yet.
 - [x] 6.2 Local smoke tests done in Stage 1: live runs on the Mac; Kalshi rebuilt books matched REST; Polymarket mismatches caught and repaired
 - [~] 6.3 First deploy (Binoy ran `deploy.sh`, 2026-11-16 19:11 UTC): stack `prediction-market-arb` **CREATE_COMPLETE** in us-east-2 with no failures. The budget deployed fine from us-east-2.
-  - Outputs: web address (CloudFront; printed by `deploy.sh`, kept out of the public repo), bucket `prediction-market-arb-<account>-us-east-2`, instance `i-0f34f7009abfee82f`, workgroup `prediction-market-arb`, database `prediction_market_arb`
+  - Outputs: web address (CloudFront; printed by `deploy.sh`, kept out of the public repo), bucket `prediction-market-arb-<account>-us-east-2`, first instance `i-0f34f7009abfee82f` (replaced), workgroup `prediction-market-arb`, database `prediction_market_arb`
   - **Bug: server self-install failed.** On the t4g.nano (412 MB usable), `dnf install git` in UserData was OOM-killed ("Killed"). Swap was only created later, in setup.sh, so the boot script stopped before the clone and nothing was installed.
     - Fix: UserData creates 1 GB of swap before any `dnf`; setup.sh's swap step skips if it exists
     - Changing UserData creates a new launch template version, so the next deploy **replaces the instance** (the failed one holds no data)
-  - [ ] Push the fix; Binoy re-runs `deploy.sh`; confirm the new instance sets itself up and the recorder runs
-  - [ ] Kalshi accepts the key from AWS; raw files land in S3 within 5 min; alarms are clear
-  - [ ] Login page, password, query page (browser DuckDB), `/api` Athena query, and Athena console counts
-  - [ ] Run `tools/migrate_sqlite.py` against the bucket; rebuild the manifest
+  - [x] Fix pushed (`8bf70ca`); Binoy re-ran `deploy.sh` → UPDATE_COMPLETE; instance replaced by `i-0a830747039912ad2`
+    - First-boot setup finished 19:39 UTC, after **~18 min** (mostly pip installs on the nano; only on first boot or a full reinstall)
+    - Swap now active before `dnf`, so no OOM
+  - [x] **Recorder live on AWS since 2026-11-16 19:39 UTC.** Checked after 36 min:
+    - Kalshi accepts the key from AWS (connected, 56/56 books, 0 resyncs)
+    - Polymarket 56/56 books, 21 mismatches corrected (≈ one per two 30 s checks, as on the Mac)
+    - Alaska governor market closed and dropped on both venues
+    - 5,060 trades backfilled
+    - Raw files land in S3 every 5 min (~850 KB per Polymarket file)
+    - Memory: recorder RSS ~115 MB, 165 MB available, swap 24 MB used
+  - [x] Alarms all OK except `nightly-job-missing` (the expected day-1 false alarm until the first 00:31 UTC run). Metrics flowing: e.g. 927 Kalshi and 8,521 Polymarket messages per 5 min, 0 upload failures.
+    - SNS: one subscription confirmed, one **PendingConfirmation**
+  - [x] Web checked with curl:
+    - `/` redirects to login; `/login.html` is public
+    - no password or wrong password → 401; right password via Bearer or Basic (any user) → 200
+    - `/api` without password → 401; DROP rejected
+    - `SHOW TABLES` via `/api` → books/coverage/trades; result CSV downloadable through CloudFront
+  - [x] Legacy SQLite loaded into S3 with `tools/migrate_sqlite.py` (reconciled 1:1 as before)
+  - [x] One-off partial processing of 2026-11-16 on the instance: 12 s, peak RSS ~256 MB, 7,033 Kalshi + 62,733 Polymarket book rows, manifest written. NightlyOK was not sent; tonight's run overwrites this with the full day.
+  - [x] Athena via `/api`: books by venue/date/source over legacy + live data, scanning 3.3 KB. Unquoted `date` works.
+  - [x] `tools/query.py` against the real address over HTTPS (no AWS credentials): live rows seconds old
+  - [ ] **Browser query page (DuckDB-WASM):** not testable from here; Binoy/Vihaan to try in a browser
+  - [ ] Check the first nightly run (2026-11-17 00:31 UTC): success, NightlyOK clears the alarm, and peak memory on a full day (~30× today's partial run)
 - [ ] 6.4 Stop the service; confirm the alarm email arrives (after both subscriptions are confirmed)
 - [ ] 6.5 Activate cost-allocation tags in Billing (manual); check Cost Explorer after 24 h. `Project` is already active; `environment` and `owner` are optional.
 
