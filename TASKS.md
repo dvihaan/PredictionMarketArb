@@ -244,6 +244,9 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
     - (b) 1-min periods only
     - Test both on a temporary alarm with a dummy metric (no recorder outage), adopt the reliable one for both alarms, delete the test resources
   - [ ] Re-verify after the fix (method to be agreed; the dummy-metric test may be enough)
+- [x] 6.7 `infra/ops.sh` operations helper (Binoy asked how to check and toggle state from the CLI):
+  - commands: `status`, `logs [recorder|nightly|refresh] [n]`, `stop|start|restart`, `refresh`, `alarms`, `test-alarm [name]` (set-alarm-state, no outage), `shell` (Session Manager)
+  - Read-only commands checked from both bash and zsh. SSM parameters are JSON-encoded via python3, to avoid shell word-splitting differences (the cause of a failed first attempt at the alarm experiment).
 - [ ] 6.5 Activate cost-allocation tags in Billing (manual); check Cost Explorer after 24 h. `Project` is already active; `environment` and `owner` are optional.
 
 ## Stage 7 — Docs
