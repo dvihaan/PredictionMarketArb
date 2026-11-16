@@ -122,6 +122,10 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
 - Total tests: 61 passing (36 new + Vihaan's 25)
 
 ## Stage 3 — Analyzers
+- [ ] 3.0 Design questions to raise with Binoy at the start of Stage 3 (noted 2026-11-16):
+  - **Per-level suspect flag.** Today's 21 Polymarket repairs never touched the best level (0 at level 1, 5 at levels 2–5, 16 deeper), yet the whole row is flagged. Record the first price level that may be wrong, so an analysis skips a row only when its depth walk reaches that level (~99% of rows stay usable).
+  - **`pairs` table** for SQL (Glue + manifest), built from `ref/pairs`, so queries can join Kalshi and Polymarket books by pair
+  - **Research example queries** on the query page, e.g. best-price gap after fees per pair per minute, and minutes with a positive gap per pair. These are rough screens; the Python analyzers stay the precise answer. Note: DuckDB has `ASOF JOIN`, Athena doesn't.
 - [ ] 3.1 `store.py`: DuckDB reader over a local dir or `s3://`
 - [ ] 3.2 Port `analyze_stream.py` to per-event replay; take gaps from `coverage`
 - [ ] 3.3 Port `analyze_maker.py`
