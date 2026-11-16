@@ -47,7 +47,7 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
   - [~] Check that a signed read request and the WebSocket handshake work despite the "Verify your location" notice: **works from the Mac** (1.1); re-check from AWS us-east-1 in Stage 6
   - [x] Stored in SSM Parameter Store by Binoy (2026-11-15): `/prediction-market-arb/kalshi/key-id` and `/prediction-market-arb/kalshi/private-key`. Both are Standard tier SecureStrings in us-east-1, encrypted with `alias/aws/ssm`. Checked: the key ID is a UUID; the private key is a complete PKCS#8 PEM with a trailing newline, so the recorder must strip whitespace when loading it.
   - [x] Both parameters tagged `project`, `environment=dev`, `owner=binoy` (Binoy added the missing tags; verified 2026-11-16)
-  - [ ] Stage 5 IAM role: allow `ssm:GetParameter` on `/prediction-market-arb/kalshi/*` (decrypting with the AWS-managed key needs no extra KMS grant)
+  - [ ] Stage 5 IAM role: allow `ssm:GetParameter` on `/prediction-market-arb/kalshi/*` **in us-east-2** (decrypting with the AWS-managed key needs no extra KMS grant)
 - [x] 1.2 `recorder/books.py`: `KalshiBook` (snapshot + signed deltas), `SeqTracker` (per-sid gap detection, reset on reconnect), `PolyBook` (book + absolute-size price changes, YES/NO view in record.py's format). Top 25 levels; same price/size rounding as `record.levels()`. `tests/test_books.py`: 11 tests, incl. fixture replays (the Polymarket YES/NO mirror holds after 91 changes).
   - Local dev env: `.venv` on Python 3.12.13; run tests with `.venv/bin/python -m unittest discover -s tests`
   - [x] Kalshi delta replay checked live (2026-11-16): after 90 s and ~130 deltas, **all 56 rebuilt books matched REST exactly**
@@ -142,17 +142,31 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 - [ ] 4.4 Publish a new `pairs.json` version (`valid_from`/`valid_to`) through the approval flow chosen in 4.0
 
 ## Stage 5 — Infrastructure (CloudFormation)
-- [ ] 5.1 `infra/stack.yaml`:
-  - S3 bucket (Block Public Access, TLS-only, SSE-S3)
-  - IAM role
-  - Security group with no inbound rules
-  - Launch template + EC2 t4g.nano (AL2023 arm64)
-  - 8 GB gp3 volume
-- [ ] 5.2 CloudWatch heartbeat metrics, status-check auto-recover, alarms → SNS email
-- [ ] 5.3 Glue database + tables (partition projection) and an Athena workgroup (query results expire after 7 days)
-- [ ] 5.4 AWS Budget at $15, filtered on the `project` tag
-- [ ] 5.5 Tag every resource `project=prediction-market-arb`, `environment=dev`, `owner=binoy` (stack tags plus explicit tags; EBS via `TagSpecifications`)
-- [ ] 5.6 Run `cfn-lint` clean
+**Account findings (read-only inspection, 2026-11-16).** The AWS account is shared with company workloads: ~30 stacks (`Nemsis*`, `rule-engine-*`, `rymetrics-*`, …), 5 Athena workgroups and an existing budget. The active cost-allocation tag is `Project` (capital P). IAM Identity Center exists. The GitHub repo `dvihaan/PredictionMarketArb` is **public**, so nothing secret may be committed: alert emails, the CloudFront password and the account ID go in as deploy-time parameters or SSM values.
+
+**Venue server locations** (third-party latency monitor; neither venue publishes them): Polymarket → AWS eu-west-2 (London), Kalshi → AWS us-east-2 (Ohio). The recorder stores each venue's server timestamps, so cross-venue alignment doesn't depend on where it runs.
+
+- [ ] 5.0 Binoy copies the Kalshi SSM parameters from us-east-1 to **us-east-2** and tags them `Project`/`environment`/`owner` (commands given 2026-11-16). Whether to keep or delete the us-east-1 copies is his call.
+- [ ] 5.1 `infra/stack.yaml` (CloudFormation, us-east-2):
+  - **Network:** a dedicated VPC with one public subnet, an internet gateway and a free S3 gateway endpoint; no NAT gateway
+  - **Storage:** S3 data bucket (private, Block Public Access, TLS-only, SSE-S3, `DeletionPolicy: Retain`, kept forever in Standard); Athena results prefix expires after 7 days
+  - **Compute:** EC2 t4g.nano on AL2023 arm64, 8 GB gp3 volume, security group with no inbound rules, access via SSM Session Manager (no SSH)
+  - **IAM:** instance role scoped to the bucket, the Kalshi SSM parameters and CloudWatch
+  - **Deployment:** UserData installs Python 3.12 and git, clones `github.com/dvihaan/PredictionMarketArb` (branch as a parameter), creates the venv, installs pinned requirements, and starts the systemd recorder service plus the nightly processing timer (00:30 UTC)
+  - **Logs:** CloudWatch Logs via the agent, 14-day retention
+- [ ] 5.2 Monitoring: recorder heartbeat metrics (messages per venue, mismatches, upload failures); EC2 status-check auto-recover; alarms → SNS email to two addresses (deploy parameter, kept out of the repo)
+- [ ] 5.3 Glue database + tables (partition projection) for curated books/trades/coverage. Athena workgroup with a **10 GB per-query scan cutoff**, read-only access, and an alarm at 50 GB scanned per day.
+- [ ] 5.4 Data access without AWS credentials:
+  - CloudFront in front of the private bucket, with a **username and password** (Basic Auth checked by a CloudFront Function; the password lives in SSM and never in the repo)
+  - Serves the `curated/` files, reports, and a `manifest.json` file index written by the nightly job
+- [ ] 5.5 Query front end behind the same CloudFront address:
+  - **Browser SQL page** running DuckDB-WASM directly over the Parquet files (static page, no server)
+  - **Lambda + Athena query API** for larger queries: Lambda function URL reachable only through CloudFront (OAC); runs queries in the capped workgroup at most 2 at a time; results downloadable as CSV
+  - **Laptop helper** (`tools/query.py`): DuckDB/pandas over the same address
+- [ ] 5.6 AWS Budget **$20/month** filtered on `Project=prediction-market-arb`; alert at 80% actual and 100% forecast
+- [ ] 5.7 Tag every resource `Project=prediction-market-arb`, `environment=dev`, `owner=binoy` (stack tags plus explicit tags; EBS via `TagSpecifications`)
+- [ ] 5.8 Run `cfn-lint` clean
+- [ ] 5.9 Before deploying: get Binoy's OK to **push** `arch-redesign` to GitHub, since the server clones from it. The remote branch is currently at `9e1d525`, behind local.
 
 ## Stage 6 — Deploy & verify
 - [ ] 6.1 `infra/deploy.sh` (package code → S3 → `cloudformation deploy` → SSM restart), `infra/teardown.sh`
@@ -193,6 +207,19 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-16 | Clean book table: one row per book change, top 25 levels (Vihaan's format) | Binoy |
 | 2026-11-16 | Polymarket mismatch windows: **flag and repair** (`suspect` column + a `rest_repair` row with the REST book) | Binoy |
 | 2026-11-16 | Parquet written with pyarrow (zstd); nightly job lives in `recorder/`, next to the code it shares; SQLite migration in `tools/` | Claude default; Binoy can change |
+| 2026-11-16 | Deploy to AWS (Stages 5–6) before porting the analyzers (Stage 3), so data starts accumulating | Binoy |
+| 2026-11-16 | Use the existing shared AWS account (not a separate account) | Binoy |
+| 2026-11-16 | Region **us-east-2 (Ohio)**, next to Kalshi's servers, instead of us-east-1 from the original plan; EU regions considered and rejected (Polymarket restrictions, untested Kalshi access, 10–15% cost) | Binoy |
+| 2026-11-16 | Dedicated VPC for the project (not the default VPC) | Binoy |
+| 2026-11-16 | Security priority: easy access for Vihaan from anywhere rather than tight lockdown | Binoy |
+| 2026-11-16 | Data access without IAM credentials: CloudFront + username/password in front of a private bucket | Binoy |
+| 2026-11-16 | Querying: browser DuckDB page + laptop DuckDB helper + Lambda/Athena query API | Binoy |
+| 2026-11-16 | Athena guardrails: 10 GB per-query cutoff, read-only role, 2 concurrent queries, daily-scan alarm at 50 GB | Binoy |
+| 2026-11-16 | Alerts go to two email addresses (Binoy's and Vihaan's), passed at deploy time and kept out of the public repo | Binoy |
+| 2026-11-16 | Budget $20/month (the plan said $15) | Binoy |
+| 2026-11-16 | Tag key `Project` (capital P, the account's active cost-allocation tag) instead of lowercase `project` | Binoy |
+| 2026-11-16 | Code reaches the server by `git clone` from the public GitHub repo (not an S3 bundle) | Binoy |
+| 2026-11-16 | Binoy copies the Kalshi key parameters to us-east-2 himself | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions
