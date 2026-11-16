@@ -178,7 +178,7 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 - [x] 5.7 Tags: stack tags from `deploy.sh` (`Project`, `environment`, `owner`) propagate to supported resources; explicit tags on the instance, volume, ENI (via the launch template) and the distribution
 - [x] 5.8 `cfn-lint` clean; `requirements-dev.txt` holds local-only tools (duckdb, cfn-lint, PyYAML)
 - Total tests: 68 passing
-- [ ] 5.9 Before deploying: get Binoy's OK to **push** `arch-redesign` to GitHub, since the server clones from it. The remote branch is currently at `9e1d525`, behind local.
+- [x] 5.9 Binoy approved the push (2026-11-16): `arch-redesign` pushed to GitHub at `138a500` after a scan for secrets and personal data (clean). Binoy runs `infra/deploy.sh` himself.
 
 ## Stage 6 — Deploy & verify
 - [ ] 6.1 `infra/deploy.sh` (package code → S3 → `cloudformation deploy` → SSM restart), `infra/teardown.sh`
