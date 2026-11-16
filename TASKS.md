@@ -30,20 +30,41 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
   - Neither venue's per-connection limit matters at 57 pairs (Kalshi documents 500,000 markets per subscription; Polymarket documents no limit).
 - [~] 1.0 Kalshi API key from Binoy's account
   - [x] Read-only key created on kalshi.com with Binoy's own RSA public key (`dbinoy-api-key`, Key ID `b496ed3a-…21da`, 2026-11-15). Private key stays at `~/.kalshi/kalshi_private.pem`. The website offers a read-only option, so the scope-reduction script isn't needed.
-  - [ ] Check that a signed read request and the WebSocket handshake work despite the "Verify your location" notice, from the Mac and later from AWS us-east-1
+  - [~] Check that a signed read request and the WebSocket handshake work despite the "Verify your location" notice: **works from the Mac** (1.1); re-check from AWS us-east-1 in Stage 6
   - [x] Stored in SSM Parameter Store by Binoy (2026-11-15): `/prediction-market-arb/kalshi/key-id` and `/prediction-market-arb/kalshi/private-key`. Both are Standard tier SecureStrings in us-east-1, encrypted with `alias/aws/ssm`. Checked: the key ID is a UUID; the private key is a complete PKCS#8 PEM with a trailing newline, so the recorder must strip whitespace when loading it.
-  - [?] Both parameters are tagged only `project=prediction-market-arb`; `environment=dev` and `owner=binoy` are missing
+  - [x] Both parameters tagged `project`, `environment=dev`, `owner=binoy` (Binoy added the missing tags; verified 2026-11-16)
   - [ ] Stage 5 IAM role: allow `ssm:GetParameter` on `/prediction-market-arb/kalshi/*` (decrypting with the AWS-managed key needs no extra KMS grant)
 - [x] 1.2 `recorder/books.py`: `KalshiBook` (snapshot + signed deltas), `SeqTracker` (per-sid gap detection, reset on reconnect), `PolyBook` (book + absolute-size price changes, YES/NO view in record.py's format). Top 25 levels; same price/size rounding as `record.levels()`. `tests/test_books.py`: 11 tests, incl. fixture replays (the Polymarket YES/NO mirror holds after 91 changes).
   - Local dev env: `.venv` on Python 3.12.13; run tests with `.venv/bin/python -m unittest discover -s tests`
-  - [ ] Check Kalshi delta replay against a REST book during the Stage 6.2 smoke test (can't be done offline)
-- [ ] 1.3 `recorder/poly_ws.py`, `recorder/kalshi_ws.py`: connect, subscribe, reconnect with backoff, heartbeat
-- [ ] 1.4 `recorder/sink.py`: gzip JSONL raw files rotated every 5 min; upload to S3 (or a local dir in dev)
-- [ ] 1.5 `recorder/pairs.py`: reload pairs (local file or S3) every 5 min; drop markets once they close
-- [ ] 1.6 Trades: reuse `kalshi_trades()`/`poly_trades()` from `record.py` for reconciliation and backfill
-- [ ] 1.7 Coverage events (connection up/down, resync, gap) so "no data" stays distinct from "no change"
-- [ ] 1.8 `recorder/main.py` + `requirements.txt` (pinned)
-- [ ] 1.9 Remove `analyze.py`, `digest.py`, `backup.py`, Windows `keep_awake`, and the old `record.py` once replaced
+  - [x] Kalshi delta replay checked live (2026-11-16): after 90 s and ~130 deltas, **all 56 rebuilt books matched REST exactly**
+- [x] 1.3 Feeds. `recorder/kalshi_ws.py`:
+  - signed handshake; subscribes `orderbook_delta` (with `use_yes_price: false` pinned) and `trade`
+  - add/delete markets on a live connection; seq-gap → `get_snapshot` resync
+  - empty snapshot → checks REST market status before dropping a closed market
+  - reconnects with backoff
+  
+  `recorder/poly_ws.py`:
+  - YES tokens only; `PING` every 10 s; reconnects after 30 s of silence
+  - subscribe/unsubscribe on a live connection
+  - REST book check every `--poly-check` s (default 120): re-checks after 3 s, then re-subscribes tokens that still differ
+  - REST books saved to the `poly_rest` stream as checkpoints
+  - `recorder/auth.py`: key from SSM or a file; RSA-PSS/Ed25519 signing
+- [x] 1.4 `recorder/sink.py`:
+  - raw layout `raw/stream=<stream>/date=/hour=/<host>-<start_ms>.jsonl.gz`; streams `kalshi_ws`, `poly_ws`, `poly_rest`, `trades`, `coverage`
+  - files written as `.part` with a gzip sync-flush every 5 s, so a crash loses at most ~5 s
+  - leftover `.part` files are recovered on start; finished files upload to S3 and are then deleted locally
+  - Deviation from the plan: partitioned by `stream=` instead of `venue=`, because each venue has several streams
+- [x] 1.5 `recorder/pairs.py`: load from a file or `s3://`; reload every `--pairs-reload` s (default 300). Closed Kalshi markets are dropped automatically (live: `KXGOVAK-26-JKRE` found `finalized`).
+- [x] 1.6 `recorder/trades.py`: REST trade backfill using `record.py`'s fetchers. Watermarks are kept in `state/trade_marks.json`, with a `--backfill-hours` fallback; marks don't advance on an interrupted fetch.
+- [x] 1.7 Coverage events: started/stopped, connected/disconnected, resync, trade_seq_gap, market_closed, markets_changed, book_mismatch, rest_missing, check_failed, poll_errors
+- [x] 1.8 `recorder/main.py` (all intervals configurable; `--no-kalshi`, `--duration`, S3 upload optional) and `requirements.txt` (pinned)
+  - Live run (150 s, 57 pairs) wrote all 5 streams, backfilled 216 trades and stopped cleanly
+  - Bug found and fixed: Kalshi `ok` replies carry seq numbers, and skipping them caused a false gap → regression test added
+  - `tests/test_feeds.py` + `tests/test_sink.py`: 27 tests in total, all passing; Vihaan's 25 still pass
+- [?] 1.9 Remove `analyze.py`, `digest.py`, `backup.py`. **Question:** `record.py` is still used for its trade fetchers. Move them into `recorder/` and delete `record.py`, or keep it until the analyzers are ported?
+- **Finding: Polymarket's live feed can be wrong with no fault on our side.** In the first live run, 2 of 57 books diverged within about 2 minutes: one level off by exactly 60 or 20 contracts, from a `price_change` stamped 1 ms after Polymarket's own book timestamp. Both REST and a fresh WS snapshot omitted that change for 25+ s, and no reversing message ever arrived. The REST check caught and fixed both. Implication: between checks, a Polymarket book can be wrong for up to `--poly-check` seconds.
+  - [ ] Compaction (Stage 2) should flag the window between a detected mismatch and its correction as suspect
+  - [ ] Watch the mismatch rate over the first days on AWS; consider a shorter check interval
 
 ## Stage 2 — Compaction & migration
 - [ ] 2.1 `compact.py`: raw → curated Parquet (`books`, `trades`, `coverage`), idempotent per date

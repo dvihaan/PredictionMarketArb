@@ -1,0 +1,5 @@
+# Recorder runtime (Python 3.12). Versions pinned as tested on 2026-11-16.
+websockets==17.4
+requests==2.34.2
+cryptography==50.0.2
+boto3==1.44.3
