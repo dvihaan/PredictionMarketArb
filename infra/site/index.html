@@ -98,20 +98,49 @@ let engine = "browser", manifest = null, db = null, conn = null, viewsKey = "", 
 
 function setStatus(text, bad = false) { $("status").textContent = text; $("status").className = bad ? "bad" : "muted"; }
 
-function renderTable(columns, rows) {
+// formatValue-begin (tested in tests/test_infra.py)
+// Turns one DuckDB/Arrow value into display text, using the column's Arrow type name:
+// dates arrive as epoch milliseconds, HUGEINT/DECIMAL as objects, BIGINT as BigInt, lists as Arrow rows.
+function formatValue(v, type = "") {
+  if (v === null || v === undefined) return "";
+  if (/^Date/.test(type)) return new Date(Number(v)).toISOString().slice(0, 10);
+  if (/^Timestamp/.test(type)) {
+    let ms = Number(v);
+    if (Math.abs(ms) > 1e17) ms /= 1e6; else if (Math.abs(ms) > 1e14) ms /= 1e3;   // ns or us -> ms
+    return new Date(ms).toISOString().replace("T", " ").replace("Z", "");
+  }
+  if (typeof v === "bigint") return v.toString();
+  if (typeof v === "object") {
+    const j = typeof v.toJSON === "function" ? v.toJSON() : v;
+    if (typeof j === "string") {
+      const m = /^Decimal\[\d+e\+?(\d+)\]/.exec(type);            // e.g. Decimal[38e+2]: insert the decimal point
+      const scale = m ? Number(m[1]) : 0;
+      if (scale > 0 && /^-?\d+$/.test(j)) {
+        const neg = j.startsWith("-"), digits = (neg ? j.slice(1) : j).padStart(scale + 1, "0");
+        return (neg ? "-" : "") + digits.slice(0, -scale) + "." + digits.slice(-scale);
+      }
+      return j;
+    }
+    return JSON.stringify(j, (k, x) => typeof x === "bigint" ? x.toString() : x);
+  }
+  return String(v);
+}
+// formatValue-end
+
+function renderTable(columns, rows, types = []) {
   const t = $("results");
   t.replaceChildren();
   const head = t.insertRow();
   for (const c of columns) { const th = document.createElement("th"); th.textContent = c; head.appendChild(th); }
   for (const r of rows) {
     const tr = t.insertRow();
-    for (const v of r) { const td = tr.insertCell(); const s = v === null || v === undefined ? "" : (typeof v === "object" ? JSON.stringify(v, (k, x) => typeof x === "bigint" ? Number(x) : x) : String(v)); td.textContent = s; td.title = s; }
+    r.forEach((v, i) => { const td = tr.insertCell(); const s = formatValue(v, types[i]); td.textContent = s; td.title = s; });
   }
 }
 
-function toCsv(columns, rows) {
-  const cell = (v) => { if (v === null || v === undefined) return ""; const s = typeof v === "object" ? JSON.stringify(v, (k, x) => typeof x === "bigint" ? Number(x) : x) : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-  return [columns.map(cell).join(","), ...rows.map(r => r.map(cell).join(","))].join("\n");
+function toCsv(columns, rows, types = []) {
+  const esc = (s) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return [columns.map(esc).join(","), ...rows.map(r => r.map((v, i) => esc(formatValue(v, types[i]))).join(","))].join("\n");
 }
 
 async function loadManifest() {
@@ -123,8 +152,8 @@ async function loadManifest() {
   const first = dates[0], last = dates[dates.length - 1];
   $("manifestInfo").textContent = `Data from ${first} to ${last} · index updated ${new Date(manifest.generated_ms).toLocaleString()}`;
   $("from").min = $("to").min = first; $("from").max = $("to").max = last;
-  const weekAgo = new Date(Date.parse(last) - 6 * 86400000).toISOString().slice(0, 10);
-  $("from").value = weekAgo < first ? first : weekAgo; $("to").value = last;
+  // Default to all dates, so both engines see the same data; narrow the range for faster queries.
+  $("from").value = first; $("to").value = last;
 }
 
 async function ensureDuckDB() {
@@ -159,9 +188,10 @@ async function runBrowser(sql) {
   const t0 = performance.now();
   const result = await conn.query(sql);
   const columns = result.schema.fields.map(f => f.name);
+  const types = result.schema.fields.map(f => String(f.type));
   const rows = result.toArray().map(r => columns.map(c => r[c]));
-  lastResult = {columns, rows};
-  renderTable(columns, rows.slice(0, 1000));
+  lastResult = {columns, rows, types};
+  renderTable(columns, rows.slice(0, 1000), types);
   setStatus(`${rows.length.toLocaleString()} rows in ${((performance.now() - t0) / 1000).toFixed(1)} s${rows.length > 1000 ? " (showing 1,000; download CSV for all)" : ""}`);
   $("csv").disabled = false;
 }
@@ -211,7 +241,7 @@ $("cancel").addEventListener("click", async () => { if (athenaId) { await api(`/
 $("csv").addEventListener("click", () => {
   if (!lastResult) return;
   if (lastResult.csvUrl) { location.href = lastResult.csvUrl; return; }
-  const url = URL.createObjectURL(new Blob([toCsv(lastResult.columns, lastResult.rows)], {type: "text/csv"}));
+  const url = URL.createObjectURL(new Blob([toCsv(lastResult.columns, lastResult.rows, lastResult.types)], {type: "text/csv"}));
   Object.assign(document.createElement("a"), {href: url, download: "query-results.csv"}).click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 });
@@ -222,7 +252,7 @@ function setEngine(e) {
   $("engAthena").setAttribute("aria-pressed", String(e === "athena"));
   $("dateControls").style.display = e === "browser" ? "" : "none";
   $("engineHelp").textContent = e === "browser"
-    ? "Runs on your computer and reads only the files for the chosen dates. Free; best for days to a few weeks."
+    ? "Runs on your computer and reads only the files between the From and To dates (all dates by default). Free; best for days to a few weeks."
     : "Runs on AWS for any date range. Costs $5 per TB scanned, stopped above 10 GB per query; filter with WHERE date BETWEEN '…' AND '…' to keep it cheap.";
 }
 $("engBrowser").addEventListener("click", () => setEngine("browser"));

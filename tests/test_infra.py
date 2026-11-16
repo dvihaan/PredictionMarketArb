@@ -81,6 +81,41 @@ class AuthFunctionTest(unittest.TestCase):
         self.assertEqual(json.loads(out.stdout), [], out.stderr)
 
 
+FORMAT_TESTS = r"""
+const fs = require('fs');
+const html = fs.readFileSync(process.argv[2], 'utf8');
+const src = html.slice(html.indexOf('// formatValue-begin'), html.indexOf('// formatValue-end'));
+const formatValue = new Function(src + '; return formatValue;')();
+// An Arrow HUGEINT/DECIMAL value: an object whose toJSON() gives the digits as a string.
+const dec = (s) => ({toJSON: () => s});
+const cases = [
+  ['date from epoch ms (Nov 9 bug report)', formatValue(1794268800000, 'Date32<DAY>'), '2026-11-10'],
+  ['HUGEINT sum (the escaped-quotes bug report)', formatValue(dec('606'), 'Decimal[38e0]'), '606'],
+  ['decimal with scale 2', formatValue(dec('-12345'), 'Decimal[18e+2]'), '-123.45'],
+  ['small decimal with scale 3', formatValue(dec('5'), 'Decimal[18e+3]'), '0.005'],
+  ['BIGINT', formatValue(12345678901234567890n, 'Int64'), '12345678901234567890'],
+  ['timestamp in microseconds', formatValue(1794858900000000, 'Timestamp<MICROSECOND>'), '2026-11-16 19:55:00.000'],
+  ['timestamp in milliseconds', formatValue(1794858900000, 'Timestamp<MILLISECOND>'), '2026-11-16 19:55:00.000'],
+  ['list of structs', formatValue({toJSON: () => [{price: 0.4, size: 10}]}, 'List<Struct<price, size>>'), '[{"price":0.4,"size":10}]'],
+  ['null', formatValue(null, 'Int32'), ''],
+  ['plain number and string', formatValue(0.72, 'Float64') + '|' + formatValue('kalshi', 'Utf8'), '0.72|kalshi'],
+];
+const failed = cases.filter(([, got, want]) => got !== want).map(([n, got, want]) => `${n}: got ${got} want ${want}`);
+console.log(JSON.stringify(failed));
+"""
+
+
+class QueryPageTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node.js not installed")
+    def test_value_formatting(self):
+        page = os.path.join(ROOT, "infra", "site", "index.html")
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "run.js"), "w", encoding="utf-8") as f:
+                f.write(FORMAT_TESTS)
+            out = subprocess.run(["node", "run.js", page], cwd=d, capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(out.stdout), [], out.stderr)
+
+
 class FakeAthena:
     class exceptions:
         class InvalidRequestException(Exception):
