@@ -1,0 +1,18 @@
+[Unit]
+Description=Nightly processing: raw capture files -> curated Parquet tables in S3
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pma
+EnvironmentFile=/etc/pma.env
+WorkingDirectory=/opt/pma/app
+ExecStart=/opt/pma/venv/bin/python -u -m recorder.compact \
+  --store s3://${PMA_BUCKET} \
+  --pairs s3://${PMA_BUCKET}/ref/pairs/current.json \
+  --region ${AWS_REGION} \
+  --metrics-namespace ${PMA_METRICS_NAMESPACE}
+# Run at low priority so the live recorder keeps the CPU it needs.
+Nice=10
+CPUWeight=20
+IOWeight=20

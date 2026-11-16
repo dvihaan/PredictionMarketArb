@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prediction Market Data</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f6f7f9; --card: #fff; --fg: #1d2330; --muted: #5d6675; --accent: #2b62d9;
+          --line: #d9dde4; --bad: #b42318; --code: #eef1f5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171c; --card: #1d2129; --fg: #e6e9ef; --muted: #9aa3b2; --accent: #7aa2ff; --line: #2e3440;
+            --bad: #ff8a80; --code: #262b35; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 16px; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; }
+  header .muted { flex: 1; }
+  main { max-width: 1200px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+  h2 { font-size: 14px; margin: 0 0 10px; }
+  .muted { color: var(--muted); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  label { font-size: 13px; color: var(--muted); }
+  input, select, textarea, button { font: inherit; color: var(--fg); }
+  input, select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; }
+  textarea { width: 100%; min-height: 140px; padding: 10px; border: 1px solid var(--line); border-radius: 6px;
+             background: var(--code); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; resize: vertical; }
+  button { padding: 7px 14px; border: 1px solid var(--line); border-radius: 6px; background: transparent; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  #status { min-height: 1.5em; }
+  #status.bad { color: var(--bad); }
+  .tablewrap { overflow: auto; max-height: 60vh; border: 1px solid var(--line); border-radius: 6px; }
+  table { border-collapse: collapse; font-size: 12.5px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  th, td { padding: 4px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; max-width: 520px;
+           overflow: hidden; text-overflow: ellipsis; }
+  th { position: sticky; top: 0; background: var(--card); }
+  ul.examples { margin: 0; padding-left: 18px; }
+  ul.examples a { color: var(--accent); cursor: pointer; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Prediction Market Data</h1>
+  <span class="muted" id="manifestInfo">Loading file index…</span>
+  <button id="signout">Sign out</button>
+</header>
+<main>
+  <section>
+    <h2>Query</h2>
+    <div class="row" style="margin-bottom:10px">
+      <span class="seg" role="group" aria-label="Engine">
+        <button id="engBrowser" aria-pressed="true">In this browser (DuckDB)</button>
+        <button id="engAthena" aria-pressed="false">On AWS (Athena)</button>
+      </span>
+      <span id="dateControls" class="row">
+        <label for="from">From</label><input id="from" type="date">
+        <label for="to">To</label><input id="to" type="date">
+      </span>
+    </div>
+    <p class="muted" id="engineHelp" style="margin:0 0 10px"></p>
+    <textarea id="sql" spellcheck="false"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="run">Run</button>
+      <button id="cancel" disabled>Cancel</button>
+      <button id="csv" disabled>Download CSV</button>
+      <span id="status" class="muted"></span>
+    </div>
+  </section>
+  <section>
+    <h2>Results</h2>
+    <div class="tablewrap"><table id="results"></table></div>
+  </section>
+  <section>
+    <h2>Tables and examples</h2>
+    <p class="muted" style="margin-top:0">
+      <code>books</code> one row per order-book change (top 25 levels; <code>yes_bids</code>/<code>no_bids</code> are lists of
+      {price, size}, best first; <code>suspect</code> marks rows that may be wrong; <code>source</code> is snapshot, delta,
+      rest_repair or rest_poll). <code>trades</code> trades in YES terms. <code>coverage</code> recorder events (gaps,
+      resyncs, mismatches). All have <code>venue</code> (kalshi/poly) and <code>date</code> columns; times are epoch ms.
+    </p>
+    <ul class="examples" id="examples"></ul>
+  </section>
+</main>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const EXAMPLES = [
+  ["Rows per venue and day", "SELECT venue, date, count(*) AS rows, sum(CASE WHEN suspect THEN 1 ELSE 0 END) AS suspect_rows\nFROM books GROUP BY venue, date ORDER BY date, venue"],
+  ["Latest best bid per market", "SELECT venue, market, max_by(yes_bids[1].price, ts_ms) AS best_yes_bid,\n       max_by(no_bids[1].price, ts_ms) AS best_no_bid\nFROM books GROUP BY venue, market ORDER BY venue, market"],
+  ["Trades per market", "SELECT venue, market, count(*) AS trades, sum(size) AS contracts, min(yes_price) AS low, max(yes_price) AS high\nFROM trades GROUP BY venue, market ORDER BY contracts DESC"],
+  ["Recorder events", "SELECT date, venue, event, count(*) AS n FROM coverage GROUP BY date, venue, event ORDER BY date, n DESC"],
+];
+let engine = "browser", manifest = null, db = null, conn = null, viewsKey = "", lastResult = null, athenaId = null;
+
+function setStatus(text, bad = false) { $("status").textContent = text; $("status").className = bad ? "bad" : "muted"; }
+
+function renderTable(columns, rows) {
+  const t = $("results");
+  t.replaceChildren();
+  const head = t.insertRow();
+  for (const c of columns) { const th = document.createElement("th"); th.textContent = c; head.appendChild(th); }
+  for (const r of rows) {
+    const tr = t.insertRow();
+    for (const v of r) { const td = tr.insertCell(); const s = v === null || v === undefined ? "" : (typeof v === "object" ? JSON.stringify(v, (k, x) => typeof x === "bigint" ? Number(x) : x) : String(v)); td.textContent = s; td.title = s; }
+  }
+}
+
+function toCsv(columns, rows) {
+  const cell = (v) => { if (v === null || v === undefined) return ""; const s = typeof v === "object" ? JSON.stringify(v, (k, x) => typeof x === "bigint" ? Number(x) : x) : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  return [columns.map(cell).join(","), ...rows.map(r => r.map(cell).join(","))].join("\n");
+}
+
+async function loadManifest() {
+  const r = await fetch("/curated/manifest.json", {cache: "no-store"});
+  if (r.status === 401) { location.href = "/login.html"; return; }
+  if (!r.ok) { $("manifestInfo").textContent = "No data index yet: the nightly job creates it after the first full day."; manifest = {tables: {}}; return; }
+  manifest = await r.json();
+  const dates = Object.values(manifest.tables).flat().map(f => f.date).filter(Boolean).sort();
+  const first = dates[0], last = dates[dates.length - 1];
+  $("manifestInfo").textContent = `Data from ${first} to ${last} · index updated ${new Date(manifest.generated_ms).toLocaleString()}`;
+  $("from").min = $("to").min = first; $("from").max = $("to").max = last;
+  const weekAgo = new Date(Date.parse(last) - 6 * 86400000).toISOString().slice(0, 10);
+  $("from").value = weekAgo < first ? first : weekAgo; $("to").value = last;
+}
+
+async function ensureDuckDB() {
+  if (conn) return;
+  setStatus("Starting DuckDB in the browser…");
+  const duckdb = await import("https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm");
+  const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+  const workerUrl = URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], {type: "text/javascript"}));
+  db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(workerUrl));
+  await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  URL.revokeObjectURL(workerUrl);
+  conn = await db.connect();
+}
+
+async function ensureViews() {
+  const from = $("from").value, to = $("to").value, key = `${from}|${to}`;
+  if (key === viewsKey) return;
+  for (const table of ["books", "trades", "coverage"]) {
+    const files = (manifest.tables[table] || []).filter(f => (!from || f.date >= from) && (!to || f.date <= to));
+    await conn.query(`DROP VIEW IF EXISTS ${table}`);
+    if (!files.length) continue;
+    const urls = files.map(f => `'${location.origin}/${f.key}'`).join(", ");
+    await conn.query(`CREATE VIEW ${table} AS SELECT * FROM read_parquet([${urls}], hive_partitioning = true, union_by_name = true)`);
+  }
+  viewsKey = key;
+}
+
+async function runBrowser(sql) {
+  await ensureDuckDB();
+  await ensureViews();
+  setStatus("Running in the browser…");
+  const t0 = performance.now();
+  const result = await conn.query(sql);
+  const columns = result.schema.fields.map(f => f.name);
+  const rows = result.toArray().map(r => columns.map(c => r[c]));
+  lastResult = {columns, rows};
+  renderTable(columns, rows.slice(0, 1000));
+  setStatus(`${rows.length.toLocaleString()} rows in ${((performance.now() - t0) / 1000).toFixed(1)} s${rows.length > 1000 ? " (showing 1,000; download CSV for all)" : ""}`);
+  $("csv").disabled = false;
+}
+
+async function api(path) {
+  const r = await fetch(path, {cache: "no-store"});
+  if (r.status === 401) { location.href = "/login.html"; throw new Error("signed out"); }
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+  return body;
+}
+
+async function runAthena(sql) {
+  setStatus("Starting Athena query…");
+  const {id} = await api(`/api/query?sql=${encodeURIComponent(sql)}`);
+  athenaId = id;
+  $("cancel").disabled = false;
+  let st;
+  while (true) {
+    await new Promise(r => setTimeout(r, 1500));
+    st = await api(`/api/status?id=${id}`);
+    if (!["QUEUED", "RUNNING"].includes(st.state)) break;
+    setStatus(`Athena: ${st.state.toLowerCase()}…`);
+  }
+  $("cancel").disabled = true;
+  athenaId = null;
+  if (st.state !== "SUCCEEDED") throw new Error(st.error || st.state);
+  const res = await api(`/api/results?id=${id}`);
+  lastResult = {columns: res.columns, rows: res.rows, csvUrl: st.csv};
+  renderTable(res.columns, res.rows);
+  const mb = (st.scanned_bytes || 0) / 1e6;
+  setStatus(`${res.rows.length.toLocaleString()} rows${res.truncated ? " shown (more in the CSV)" : ""} · scanned ${mb.toFixed(1)} MB (≈ $${(mb / 1e6 * 5).toFixed(4)}) · ${(st.ms / 1000).toFixed(1)} s`);
+  $("csv").disabled = false;
+}
+
+$("run").addEventListener("click", async () => {
+  const sql = $("sql").value.trim();
+  if (!sql) return;
+  $("run").disabled = true; $("csv").disabled = true;
+  try { engine === "browser" ? await runBrowser(sql) : await runAthena(sql); }
+  catch (e) { setStatus(String(e.message || e), true); }
+  finally { $("run").disabled = false; }
+});
+
+$("cancel").addEventListener("click", async () => { if (athenaId) { await api(`/api/cancel?id=${athenaId}`); setStatus("Cancelled."); } });
+
+$("csv").addEventListener("click", () => {
+  if (!lastResult) return;
+  if (lastResult.csvUrl) { location.href = lastResult.csvUrl; return; }
+  const url = URL.createObjectURL(new Blob([toCsv(lastResult.columns, lastResult.rows)], {type: "text/csv"}));
+  Object.assign(document.createElement("a"), {href: url, download: "query-results.csv"}).click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+});
+
+function setEngine(e) {
+  engine = e;
+  $("engBrowser").setAttribute("aria-pressed", String(e === "browser"));
+  $("engAthena").setAttribute("aria-pressed", String(e === "athena"));
+  $("dateControls").style.display = e === "browser" ? "" : "none";
+  $("engineHelp").textContent = e === "browser"
+    ? "Runs on your computer and reads only the files for the chosen dates. Free; best for days to a few weeks."
+    : "Runs on AWS for any date range. Costs $5 per TB scanned, stopped above 10 GB per query; filter with WHERE date BETWEEN '…' AND '…' to keep it cheap.";
+}
+$("engBrowser").addEventListener("click", () => setEngine("browser"));
+$("engAthena").addEventListener("click", () => setEngine("athena"));
+$("signout").addEventListener("click", () => { document.cookie = "pma_auth=; Path=/; Max-Age=0; Secure; SameSite=Strict"; location.href = "/login.html"; });
+
+for (const [label, sql] of EXAMPLES) {
+  const li = document.createElement("li"); const a = document.createElement("a");
+  a.textContent = label; a.addEventListener("click", () => { $("sql").value = sql; }); li.appendChild(a); $("examples").appendChild(li);
+}
+$("sql").value = EXAMPLES[0][1];
+setEngine("browser");
+loadManifest().catch(e => setStatus(String(e), true));
+</script>
+</body>
+</html>

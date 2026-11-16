@@ -147,25 +147,37 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 **Venue server locations** (third-party latency monitor; neither venue publishes them): Polymarket → AWS eu-west-2 (London), Kalshi → AWS us-east-2 (Ohio). The recorder stores each venue's server timestamps, so cross-venue alignment doesn't depend on where it runs.
 
 - [ ] 5.0 Binoy copies the Kalshi SSM parameters from us-east-1 to **us-east-2** and tags them `Project`/`environment`/`owner` (commands given 2026-11-16). Whether to keep or delete the us-east-1 copies is his call.
-- [ ] 5.1 `infra/stack.yaml` (CloudFormation, us-east-2):
-  - **Network:** a dedicated VPC with one public subnet, an internet gateway and a free S3 gateway endpoint; no NAT gateway
-  - **Storage:** S3 data bucket (private, Block Public Access, TLS-only, SSE-S3, `DeletionPolicy: Retain`, kept forever in Standard); Athena results prefix expires after 7 days
-  - **Compute:** EC2 t4g.nano on AL2023 arm64, 8 GB gp3 volume, security group with no inbound rules, access via SSM Session Manager (no SSH)
-  - **IAM:** instance role scoped to the bucket, the Kalshi SSM parameters and CloudWatch
-  - **Deployment:** UserData installs Python 3.12 and git, clones `github.com/dvihaan/PredictionMarketArb` (branch as a parameter), creates the venv, installs pinned requirements, and starts the systemd recorder service plus the nightly processing timer (00:30 UTC)
-  - **Logs:** CloudWatch Logs via the agent, 14-day retention
-- [ ] 5.2 Monitoring: recorder heartbeat metrics (messages per venue, mismatches, upload failures); EC2 status-check auto-recover; alarms → SNS email to two addresses (deploy parameter, kept out of the repo)
-- [ ] 5.3 Glue database + tables (partition projection) for curated books/trades/coverage. Athena workgroup with a **10 GB per-query scan cutoff**, read-only access, and an alarm at 50 GB scanned per day.
-- [ ] 5.4 Data access without AWS credentials:
-  - CloudFront in front of the private bucket, with a **username and password** (Basic Auth checked by a CloudFront Function; the password lives in SSM and never in the repo)
-  - Serves the `curated/` files, reports, and a `manifest.json` file index written by the nightly job
-- [ ] 5.5 Query front end behind the same CloudFront address:
-  - **Browser SQL page** running DuckDB-WASM directly over the Parquet files (static page, no server)
-  - **Lambda + Athena query API** for larger queries: Lambda function URL reachable only through CloudFront (OAC); runs queries in the capped workgroup at most 2 at a time; results downloadable as CSV
-  - **Laptop helper** (`tools/query.py`): DuckDB/pandas over the same address
-- [ ] 5.6 AWS Budget **$20/month** filtered on `Project=prediction-market-arb`; alert at 80% actual and 100% forecast
-- [ ] 5.7 Tag every resource `Project=prediction-market-arb`, `environment=dev`, `owner=binoy` (stack tags plus explicit tags; EBS via `TagSpecifications`)
-- [ ] 5.8 Run `cfn-lint` clean
+- [x] 5.1 `infra/stack.yaml` (CloudFormation, us-east-2): written; `cfn-lint` clean; accepted by `aws cloudformation validate-template`
+  - **Network:** a dedicated VPC `10.42.0.0/24` with one public subnet, an internet gateway and a free S3 gateway endpoint; no NAT gateway
+  - **Storage:** S3 bucket `prediction-market-arb-<account>-<region>` (private, Block Public Access, TLS-only, SSE-S3, `DeletionPolicy: Retain`, Standard forever); `athena-results/` expires after 7 days
+  - **Compute:** EC2 t4g.nano from a launch template (AL2023 arm64 via SSM AMI parameter), 8 GB encrypted gp3, IMDSv2, security group with no inbound rules, SSM Session Manager
+  - **IAM:** instance role scoped to the bucket's `raw/`, `curated/` and `ref/`, the Kalshi SSM parameters, and `PutMetricData` in one namespace
+  - **Deployment:** UserData writes `/etc/pma.env`, clones the repo (branch parameter) and runs `infra/server/pma-update`, which runs `infra/server/setup.sh`:
+    - installs Python 3.12 and git; adds 1 GB swap
+    - creates the `pma` user (owns only `/opt/pma/data`) and the venv with pinned requirements
+    - seeds `ref/pairs/current.json` from `watchlist.json` (first time only)
+    - installs systemd units `pma-recorder.service` and `pma-compact.service`, plus `pma-compact.timer` at 00:30 UTC
+  - **Logs:** **changed from the plan.** No CloudWatch Logs agent: it would use ~50–80 MB of the nano's 0.5 GB. Logs stay in `journalctl`, reachable through Session Manager. Alarms come from the recorder's own metrics. (Claude default; Binoy can ask for the agent.)
+  - Bug caught in review: git as root refuses a checkout owned by another user ("dubious ownership"). Root now owns the code and venv; `pma` owns only its data.
+- [x] 5.2 Monitoring:
+  - `recorder/metrics.py` sends Heartbeat, KalshiMessages, PolyMessages, PolyMismatches and UploadFailures every minute; the nightly job sends NightlyOK
+  - Alarms → SNS (1–2 emails from deploy-time parameters): recorder-down (no heartbeat for 10 min), kalshi-feed-silent and poly-feed-silent (15 min), upload-failures, nightly-job-missing (**expect one false alarm on day 1**), instance-recovery (with EC2 recover action), athena-daily-scan
+- [x] 5.3 Glue database `prediction_market_arb` with tables `books`, `trades` and `coverage` (Parquet, partition projection on venue/date from 2026-11-01). Athena workgroup `prediction-market-arb`: 10 GiB per-query cutoff, engine v3, results to `athena-results/`, CloudWatch metrics on.
+- [x] 5.4 Data access without AWS credentials: CloudFront (PriceClass_100, caching off because files are overwritten nightly) in front of the private bucket. A CloudFront Function checks the password, and only its SHA-256 is embedded. It accepts:
+  - a `pma_auth` cookie set by `login.html`
+  - `Authorization: Bearer <password>` (tools)
+  - `Basic <any-user>:<password>` (browsers, curl)
+
+  Unauthenticated HTML redirects to the login page; anything else gets a 401. The password is created by `infra/deploy.sh` in SSM `/prediction-market-arb/web/password`.
+- [x] 5.5 Query front ends:
+  - `infra/site/index.html`: one SQL page with two engines. **In this browser** runs DuckDB-WASM 1.29.0 over the files for the chosen dates, via `curated/manifest.json`. **On AWS** runs Athena through `/api/*`. Shows results and offers a CSV download.
+  - Query Lambda (inline in the template): GET `/api/query|status|results|cancel`. Only one SELECT/WITH/SHOW/DESCRIBE/EXPLAIN statement is allowed, with at most 2 queries running. Reachable only through CloudFront (function URL with AWS_IAM + OAC). Read-only Glue/S3 permissions; writes only to `athena-results/`.
+  - `tools/query.py`: the same views for DuckDB/pandas on a laptop (`PMA_URL` + `PMA_PASSWORD`). Tested locally and over HTTP: legacy and new data together, venue/date read from the file paths, date filter applied.
+  - `tests/test_infra.py`: the password function runs in Node (9 cases, incl. a password containing a colon); the query Lambda runs with a fake Athena client (read-only checks, concurrency cap, status/results)
+- [x] 5.6 AWS Budget **$20/month**, filter `TagKeyValue: user:Project$prediction-market-arb`, alerts at 80% actual and 100% forecast via SNS. Unverified: whether `AWS::Budgets::Budget` deploys from us-east-2 (the docs don't say); the first deploy will tell.
+- [x] 5.7 Tags: stack tags from `deploy.sh` (`Project`, `environment`, `owner`) propagate to supported resources; explicit tags on the instance, volume, ENI (via the launch template) and the distribution
+- [x] 5.8 `cfn-lint` clean; `requirements-dev.txt` holds local-only tools (duckdb, cfn-lint, PyYAML)
+- Total tests: 68 passing
 - [ ] 5.9 Before deploying: get Binoy's OK to **push** `arch-redesign` to GitHub, since the server clones from it. The remote branch is currently at `9e1d525`, behind local.
 
 ## Stage 6 — Deploy & verify

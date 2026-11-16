@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Pull the latest code for the configured branch and re-run setup (which restarts the recorder).
+# Run as root on the instance, or remotely with infra/update.sh (SSM Run Command).
+set -euo pipefail
+source /etc/pma.env
+APP=/opt/pma/app
+if [ ! -d "$APP/.git" ]; then
+  git clone --branch "$PMA_BRANCH" --single-branch "$PMA_REPO" "$APP"
+else
+  git -C "$APP" fetch --quiet origin "$PMA_BRANCH"
+  git -C "$APP" reset --quiet --hard "origin/$PMA_BRANCH"
+fi
+bash "$APP/infra/server/setup.sh"

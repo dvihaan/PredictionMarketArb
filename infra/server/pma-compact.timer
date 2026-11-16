@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the nightly processing job at 00:30 UTC
+
+[Timer]
+OnCalendar=*-*-* 00:30:00 UTC
+# If the instance was off at 00:30, run as soon as it is back.
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

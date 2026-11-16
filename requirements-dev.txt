@@ -1,0 +1,5 @@
+# Local development and analysis only (not installed on the server). Tested 2026-11-16.
+-r requirements.txt
+duckdb==2.0.0
+cfn-lint==1.60.1
+PyYAML==6.0.3

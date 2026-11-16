@@ -1,0 +1,819 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Prediction market recorder (Kalshi + Polymarket): EC2 recorder, S3 data lake, Glue/Athena tables,
+  password-protected CloudFront access with a browser query page and an Athena query API, alarms, budget.
+  Deploy with infra/deploy.sh (it creates the web password and passes only its hash).
+
+Parameters:
+  ProjectTag:
+    Type: String
+    Default: prediction-market-arb
+  EnvironmentTag:
+    Type: String
+    Default: dev
+  OwnerTag:
+    Type: String
+    Default: binoy
+  AlertEmail1:
+    Type: String
+    Description: First email address for alarms and budget alerts (kept out of the repository).
+  AlertEmail2:
+    Type: String
+    Default: ""
+    Description: Optional second email address for alarms and budget alerts.
+  RepoUrl:
+    Type: String
+    Default: https://github.com/dvihaan/PredictionMarketArb.git
+  RepoBranch:
+    Type: String
+    Default: arch-redesign
+  InstanceType:
+    Type: String
+    Default: t4g.nano
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+  WebPasswordHash:
+    Type: String
+    NoEcho: true
+    AllowedPattern: "^[0-9a-f]{64}$"
+    Description: SHA-256 (hex) of the web password. infra/deploy.sh computes it from the SSM parameter.
+  BudgetAmount:
+    Type: Number
+    Default: 20
+  AthenaScanLimitBytes:
+    Type: Number
+    Default: 10737418240
+    Description: Athena stops any query that scans more than this (default 10 GiB, about $0.05).
+  AthenaDailyAlarmBytes:
+    Type: Number
+    Default: 50000000000
+    Description: Email when a day's Athena scanning exceeds this (default 50 GB, about $0.25).
+  MetricsNamespace:
+    Type: String
+    Default: PredictionMarketArb
+
+Conditions:
+  HasSecondEmail: !Not [!Equals [!Ref AlertEmail2, ""]]
+
+Resources:
+  # ---------------------------------------------------------------- network
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/24
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - {Key: Name, Value: !Ref ProjectTag}
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - {Key: Name, Value: !Ref ProjectTag}
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.42.0.0/25
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - {Key: Name, Value: !Sub "${ProjectTag}-public"}
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - {Key: Name, Value: !Ref ProjectTag}
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  SubnetRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref RouteTable
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref RouteTable]
+  RecorderSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Recorder - outbound only, no inbound access
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - {IpProtocol: "-1", CidrIp: 0.0.0.0/0, Description: "Outbound to venue APIs, S3, SSM and CloudWatch"}
+      Tags:
+        - {Key: Name, Value: !Sub "${ProjectTag}-recorder"}
+
+  # ---------------------------------------------------------------- data
+  DataBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${ProjectTag}-${AWS::AccountId}-${AWS::Region}"
+      OwnershipControls:
+        Rules: [{ObjectOwnership: BucketOwnerEnforced}]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-athena-results
+            Status: Enabled
+            Prefix: athena-results/
+            ExpirationInDays: 7
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 7}
+      Tags:
+        - {Key: Name, Value: !Ref ProjectTag}
+  DataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DataBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt DataBucket.Arn, !Sub "${DataBucket.Arn}/*"]
+            Condition: {Bool: {"aws:SecureTransport": "false"}}
+          - Sid: CloudFrontReadOnly
+            Effect: Allow
+            Principal: {Service: cloudfront.amazonaws.com}
+            Action: s3:GetObject
+            Resource: !Sub "${DataBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+  # ---------------------------------------------------------------- recorder instance
+  RecorderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - {Effect: Allow, Principal: {Service: ec2.amazonaws.com}, Action: sts:AssumeRole}
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: recorder
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: DataReadWrite
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource:
+                  - !Sub "${DataBucket.Arn}/raw/*"
+                  - !Sub "${DataBucket.Arn}/curated/*"
+                  - !Sub "${DataBucket.Arn}/ref/*"
+              - Sid: DataList
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt DataBucket.Arn
+              - Sid: KalshiKey
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/prediction-market-arb/kalshi/*"
+              - Sid: Metrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: "*"
+                Condition: {StringEquals: {"cloudwatch:namespace": !Ref MetricsNamespace}}
+      Tags:
+        - {Key: Name, Value: !Sub "${ProjectTag}-recorder"}
+  RecorderInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref RecorderRole]
+  RecorderLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile: {Arn: !GetAtt RecorderInstanceProfile.Arn}
+        MetadataOptions: {HttpTokens: required, HttpEndpoint: enabled}
+        CreditSpecification: {CpuCredits: standard}
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            SubnetId: !Ref PublicSubnet
+            Groups: [!Ref RecorderSecurityGroup]
+            AssociatePublicIpAddress: true
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs: {VolumeSize: 8, VolumeType: gp3, Encrypted: true, DeleteOnTermination: true}
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - {Key: Name, Value: !Sub "${ProjectTag}-recorder"}
+              - {Key: Project, Value: !Ref ProjectTag}
+              - {Key: environment, Value: !Ref EnvironmentTag}
+              - {Key: owner, Value: !Ref OwnerTag}
+          - ResourceType: volume
+            Tags:
+              - {Key: Name, Value: !Sub "${ProjectTag}-recorder"}
+              - {Key: Project, Value: !Ref ProjectTag}
+              - {Key: environment, Value: !Ref EnvironmentTag}
+              - {Key: owner, Value: !Ref OwnerTag}
+          - ResourceType: network-interface
+            Tags:
+              - {Key: Project, Value: !Ref ProjectTag}
+              - {Key: environment, Value: !Ref EnvironmentTag}
+              - {Key: owner, Value: !Ref OwnerTag}
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            # First boot: write settings, clone the repository and run its setup script.
+            set -euxo pipefail
+            cat > /etc/pma.env <<EOF
+            AWS_REGION=${AWS::Region}
+            PMA_BUCKET=${DataBucket}
+            PMA_REPO=${RepoUrl}
+            PMA_BRANCH=${RepoBranch}
+            PMA_METRICS_NAMESPACE=${MetricsNamespace}
+            EOF
+            dnf install -y -q git
+            mkdir -p /opt/pma
+            git clone --branch "${RepoBranch}" --single-branch "${RepoUrl}" /opt/pma/app
+            bash /opt/pma/app/infra/server/pma-update
+  RecorderInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref RecorderLaunchTemplate
+        Version: !GetAtt RecorderLaunchTemplate.LatestVersionNumber
+
+  # ---------------------------------------------------------------- alerts
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${ProjectTag}-alerts"
+      Subscription: !If
+        - HasSecondEmail
+        - [{Protocol: email, Endpoint: !Ref AlertEmail1}, {Protocol: email, Endpoint: !Ref AlertEmail2}]
+        - [{Protocol: email, Endpoint: !Ref AlertEmail1}]
+  AlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref AlertTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowBudgetsAndAlarms
+            Effect: Allow
+            Principal: {Service: [budgets.amazonaws.com, cloudwatch.amazonaws.com]}
+            Action: sns:Publish
+            Resource: !Ref AlertTopic
+            Condition: {StringEquals: {"aws:SourceAccount": !Ref AWS::AccountId}}
+  RecorderDownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectTag}-recorder-down"
+      AlarmDescription: No heartbeat from the recorder for 10 minutes (process stopped or instance down).
+      Namespace: !Ref MetricsNamespace
+      MetricName: Heartbeat
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+  KalshiSilentAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectTag}-kalshi-feed-silent"
+      AlarmDescription: The recorder is running but received no Kalshi messages for 15 minutes.
+      Namespace: !Ref MetricsNamespace
+      MetricName: KalshiMessages
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+  PolySilentAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectTag}-poly-feed-silent"
+      AlarmDescription: The recorder is running but received no Polymarket messages for 15 minutes.
+      Namespace: !Ref MetricsNamespace
+      MetricName: PolyMessages
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+  UploadFailuresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectTag}-upload-failures"
+      AlarmDescription: Raw files are failing to upload to S3 (they wait on the instance's disk and retry).
+      Namespace: !Ref MetricsNamespace
+      MetricName: UploadFailures
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+  NightlyJobAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectTag}-nightly-job-missing"
+      AlarmDescription: The nightly processing job has not reported success in the last day. Expected once on the first day after deployment.
+      Namespace: !Ref MetricsNamespace
+      MetricName: NightlyOK
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+  InstanceRecoveryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectTag}-instance-recovery"
+      AlarmDescription: AWS hardware problem with the recorder instance; it is being recovered.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Dimensions: [{Name: InstanceId, Value: !Ref RecorderInstance}]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Sub "arn:${AWS::Partition}:automate:${AWS::Region}:ec2:recover"
+        - !Ref AlertTopic
+  AthenaDailyScanAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectTag}-athena-daily-scan"
+      AlarmDescription: Athena queries in the project workgroup scanned more than the daily threshold.
+      Namespace: AWS/Athena
+      MetricName: ProcessedBytes
+      Dimensions:
+        - {Name: WorkGroup, Value: !Ref AthenaWorkGroup}
+        - {Name: QueryState, Value: SUCCEEDED}
+        - {Name: QueryType, Value: DML}
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: !Ref AthenaDailyAlarmBytes
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # ---------------------------------------------------------------- Glue + Athena
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: prediction_market_arb
+        Description: Curated Kalshi and Polymarket order books, trades and recorder coverage.
+  BooksTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: books
+        Description: One row per order-book change, top 25 levels, best first. ts_ms is the recorder's receive time.
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: parquet
+          projection.enabled: "true"
+          projection.venue.type: enum
+          projection.venue.values: kalshi,poly
+          projection.date.type: date
+          projection.date.format: yyyy-MM-dd
+          projection.date.range: 2026-11-01,NOW
+          projection.date.interval: "1"
+          projection.date.interval.unit: DAYS
+          storage.location.template: !Sub "s3://${DataBucket}/curated/books/venue=${!venue}/date=${!date}/"
+        PartitionKeys:
+          - {Name: venue, Type: string}
+          - {Name: date, Type: string}
+        StorageDescriptor:
+          Location: !Sub "s3://${DataBucket}/curated/books/"
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo: {SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe}
+          Columns:
+            - {Name: ts_ms, Type: bigint}
+            - {Name: server_ms, Type: bigint}
+            - {Name: market, Type: string}
+            - {Name: yes_bids, Type: "array<struct<price:double,size:double>>"}
+            - {Name: no_bids, Type: "array<struct<price:double,size:double>>"}
+            - {Name: source, Type: string}
+            - {Name: suspect, Type: boolean}
+  TradesTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: trades
+        Description: Trades in YES terms, de-duplicated on trade_id; date is the trade's own UTC date.
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: parquet
+          projection.enabled: "true"
+          projection.venue.type: enum
+          projection.venue.values: kalshi,poly
+          projection.date.type: date
+          projection.date.format: yyyy-MM-dd
+          projection.date.range: 2026-11-01,NOW
+          projection.date.interval: "1"
+          projection.date.interval.unit: DAYS
+          storage.location.template: !Sub "s3://${DataBucket}/curated/trades/venue=${!venue}/date=${!date}/"
+        PartitionKeys:
+          - {Name: venue, Type: string}
+          - {Name: date, Type: string}
+        StorageDescriptor:
+          Location: !Sub "s3://${DataBucket}/curated/trades/"
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo: {SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe}
+          Columns:
+            - {Name: trade_id, Type: string}
+            - {Name: market, Type: string}
+            - {Name: ts_ms, Type: bigint}
+            - {Name: yes_price, Type: double}
+            - {Name: size, Type: double}
+            - {Name: taker, Type: string}
+            - {Name: source, Type: string}
+  CoverageTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: coverage
+        Description: Recorder events (connections, resyncs, mismatches, closed markets, legacy poll cycles); detail is JSON.
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: parquet
+          projection.enabled: "true"
+          projection.date.type: date
+          projection.date.format: yyyy-MM-dd
+          projection.date.range: 2026-11-01,NOW
+          projection.date.interval: "1"
+          projection.date.interval.unit: DAYS
+          storage.location.template: !Sub "s3://${DataBucket}/curated/coverage/date=${!date}/"
+        PartitionKeys:
+          - {Name: date, Type: string}
+        StorageDescriptor:
+          Location: !Sub "s3://${DataBucket}/curated/coverage/"
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo: {SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe}
+          Columns:
+            - {Name: recv_ms, Type: bigint}
+            - {Name: venue, Type: string}
+            - {Name: event, Type: string}
+            - {Name: detail, Type: string}
+  AthenaWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: !Ref ProjectTag
+      Description: Read-only queries over the curated tables, capped per query.
+      State: ENABLED
+      RecursiveDeleteOption: true
+      WorkGroupConfiguration:
+        EnforceWorkGroupConfiguration: true
+        PublishCloudWatchMetricsEnabled: true
+        BytesScannedCutoffPerQuery: !Ref AthenaScanLimitBytes
+        EngineVersion: {SelectedEngineVersion: Athena engine version 3}
+        ResultConfiguration:
+          OutputLocation: !Sub "s3://${DataBucket}/athena-results/"
+          EncryptionConfiguration: {EncryptionOption: SSE_S3}
+
+  # ---------------------------------------------------------------- query API (Lambda + Athena)
+  QueryFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - {Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: sts:AssumeRole}
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: read-only-athena
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Athena
+                Effect: Allow
+                Action: [athena:StartQueryExecution, athena:GetQueryExecution, athena:GetQueryResults,
+                         athena:StopQueryExecution, athena:ListQueryExecutions, athena:BatchGetQueryExecution,
+                         athena:GetWorkGroup]
+                Resource: !Sub "arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${AthenaWorkGroup}"
+              - Sid: GlueReadOnly
+                Effect: Allow
+                Action: [glue:GetDatabase, glue:GetDatabases, glue:GetTable, glue:GetTables, glue:GetPartition,
+                         glue:GetPartitions]
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/prediction_market_arb"
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/prediction_market_arb/*"
+              - Sid: ReadData
+                Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - !Sub "${DataBucket.Arn}/curated/*"
+                  - !Sub "${DataBucket.Arn}/ref/*"
+                  - !Sub "${DataBucket.Arn}/athena-results/*"
+              - Sid: ListData
+                Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Resource: !GetAtt DataBucket.Arn
+              - Sid: WriteResults
+                Effect: Allow
+                Action: [s3:PutObject, s3:AbortMultipartUpload]
+                Resource: !Sub "${DataBucket.Arn}/athena-results/*"
+  QueryFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectTag}-query"
+      Description: Runs read-only Athena queries for the password-protected query page.
+      Runtime: python3.12
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 15
+      MemorySize: 256
+      Role: !GetAtt QueryFunctionRole.Arn
+      Environment:
+        Variables:
+          WORKGROUP: !Ref AthenaWorkGroup
+          DATABASE: prediction_market_arb
+          MAX_RUNNING: "2"
+      Code:
+        ZipFile: |
+          """Read-only Athena query API, reached only through CloudFront (which checks the password).
+
+          GET /api/query?sql=...   start a query            -> {"id"}
+          GET /api/status?id=...   state, scanned bytes     -> {"state", "error", "scanned_bytes", "ms", "csv"}
+          GET /api/results?id=...  first rows (max 1000)    -> {"columns", "rows", "truncated"}
+          GET /api/cancel?id=...   stop a running query
+          The full result is a CSV under /athena-results/<id>.csv on the same address.
+          """
+          import json
+          import os
+          import re
+
+          import boto3
+
+          athena = boto3.client("athena")
+          WG, DB, MAX_RUNNING = os.environ["WORKGROUP"], os.environ["DATABASE"], int(os.environ["MAX_RUNNING"])
+          READ_ONLY = re.compile(r"^\s*(select|with|show|describe|explain)\b", re.I)
+
+
+          def reply(code, body):
+              return {"statusCode": code, "body": json.dumps(body, default=str),
+                      "headers": {"content-type": "application/json", "cache-control": "no-store"}}
+
+
+          def running():
+              ids = athena.list_query_executions(WorkGroup=WG, MaxResults=50)["QueryExecutionIds"]
+              if not ids:
+                  return 0
+              execs = athena.batch_get_query_execution(QueryExecutionIds=ids)["QueryExecutions"]
+              return sum(e["Status"]["State"] in ("QUEUED", "RUNNING") for e in execs)
+
+
+          def handler(event, context):
+              path = event.get("rawPath", "")
+              q = event.get("queryStringParameters") or {}
+              try:
+                  if path.endswith("/query"):
+                      sql = (q.get("sql") or "").strip().rstrip(";").strip()
+                      if not READ_ONLY.match(sql) or ";" in sql:
+                          return reply(400, {"error": "Only one SELECT, WITH, SHOW, DESCRIBE or EXPLAIN statement is allowed."})
+                      if running() >= MAX_RUNNING:
+                          return reply(429, {"error": f"{MAX_RUNNING} queries are already running; try again shortly."})
+                      qid = athena.start_query_execution(QueryString=sql, WorkGroup=WG,
+                                                         QueryExecutionContext={"Database": DB})["QueryExecutionId"]
+                      return reply(200, {"id": qid})
+                  qid = q.get("id", "")
+                  if not re.fullmatch(r"[0-9a-f-]{36}", qid):
+                      return reply(400, {"error": "missing or invalid id"})
+                  if path.endswith("/status"):
+                      e = athena.get_query_execution(QueryExecutionId=qid)["QueryExecution"]
+                      if e.get("WorkGroup") != WG:
+                          return reply(404, {"error": "unknown query"})
+                      st, stats = e["Status"], e.get("Statistics", {})
+                      return reply(200, {"state": st["State"], "error": st.get("StateChangeReason"),
+                                         "scanned_bytes": stats.get("DataScannedInBytes"),
+                                         "ms": stats.get("TotalExecutionTimeInMillis"),
+                                         "csv": f"/athena-results/{qid}.csv"})
+                  if path.endswith("/results"):
+                      r = athena.get_query_results(QueryExecutionId=qid, MaxResults=1000)
+                      rows = [[c.get("VarCharValue") for c in row["Data"]] for row in r["ResultSet"]["Rows"]]
+                      cols = [c["Name"] for c in r["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]]
+                      if rows and rows[0] == cols:
+                          rows = rows[1:]
+                      return reply(200, {"columns": cols, "rows": rows, "truncated": bool(r.get("NextToken"))})
+                  if path.endswith("/cancel"):
+                      athena.stop_query_execution(QueryExecutionId=qid)
+                      return reply(200, {"cancelled": qid})
+                  return reply(404, {"error": "unknown endpoint"})
+              except athena.exceptions.InvalidRequestException as e:
+                  return reply(400, {"error": str(e)})
+  QueryFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${QueryFunction}"
+      RetentionInDays: 14
+  QueryFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt QueryFunction.Arn
+      AuthType: AWS_IAM
+  QueryFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref QueryFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: cloudfront.amazonaws.com
+      FunctionUrlAuthType: AWS_IAM
+      SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+  QueryFunctionInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref QueryFunction
+      Action: lambda:InvokeFunction
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+  # ---------------------------------------------------------------- CloudFront (password-protected access)
+  AuthFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${ProjectTag}-auth"
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Password check for the data, query page and query API
+        Runtime: cloudfront-js-2.0
+      FunctionCode: !Sub |
+        var crypto = require('crypto');
+        var HASH = '${WebPasswordHash}';
+        function sha256(s) { return crypto.createHash('sha256').update(s).digest('hex'); }
+        function handler(event) {
+          var req = event.request;
+          var uri = req.uri;
+          if (uri === '/login.html' || uri === '/favicon.ico') { return req; }
+          var ok = false;
+          var cookie = req.cookies['pma_auth'];
+          if (cookie && cookie.value === HASH) { ok = true; }
+          var auth = req.headers['authorization'];
+          if (!ok && auth) {
+            var v = auth.value;
+            if (v.indexOf('Bearer ') === 0) {
+              ok = sha256(v.slice(7)) === HASH;
+            } else if (v.indexOf('Basic ') === 0) {
+              var decoded = Buffer.from(v.slice(6), 'base64').toString();
+              ok = sha256(decoded.slice(decoded.indexOf(':') + 1)) === HASH;
+            }
+          }
+          if (!ok) {
+            if (uri === '/' || uri.slice(-5) === '.html') {
+              return {statusCode: 302, statusDescription: 'Found', headers: {location: {value: '/login.html'}}};
+            }
+            return {statusCode: 401, statusDescription: 'Unauthorized',
+                    headers: {'www-authenticate': {value: 'Basic realm="prediction-market-arb"'}}};
+          }
+          // The query API origin is signed by CloudFront itself, so the viewer's credentials are not passed on.
+          delete req.headers['authorization'];
+          if (uri === '/') { req.uri = '/index.html'; }
+          return req;
+        }
+  S3OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${ProjectTag}-s3"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+  LambdaOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${ProjectTag}-lambda"
+        OriginAccessControlOriginType: lambda
+        SigningBehavior: always
+        SigningProtocol: sigv4
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub "${ProjectTag} data and query page (password protected)"
+        Enabled: true
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        DefaultRootObject: index.html
+        Origins:
+          - Id: data
+            DomainName: !GetAtt DataBucket.RegionalDomainName
+            OriginAccessControlId: !Ref S3OriginAccessControl
+            S3OriginConfig: {OriginAccessIdentity: ""}
+          - Id: query-api
+            DomainName: !Select [2, !Split ["/", !GetAtt QueryFunctionUrl.FunctionUrl]]
+            OriginAccessControlId: !Ref LambdaOriginAccessControl
+            CustomOriginConfig: {OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2]}
+        DefaultCacheBehavior:
+          TargetOriginId: data
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # Managed policy "CachingDisabled": files are overwritten nightly, so always read the current copy.
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          FunctionAssociations:
+            - {EventType: viewer-request, FunctionARN: !GetAtt AuthFunction.FunctionMetadata.FunctionARN}
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: query-api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods: [GET, HEAD]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            # Managed policy "AllViewerExceptHostHeader": passes the query string to the Lambda function.
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+            FunctionAssociations:
+              - {EventType: viewer-request, FunctionARN: !GetAtt AuthFunction.FunctionMetadata.FunctionARN}
+      Tags:
+        - {Key: Name, Value: !Ref ProjectTag}
+        - {Key: Project, Value: !Ref ProjectTag}
+        - {Key: environment, Value: !Ref EnvironmentTag}
+        - {Key: owner, Value: !Ref OwnerTag}
+
+  # ---------------------------------------------------------------- budget
+  Budget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "${ProjectTag}-monthly"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: {Amount: !Ref BudgetAmount, Unit: USD}
+        CostFilters:
+          TagKeyValue: [!Sub "user:Project$${ProjectTag}"]
+      NotificationsWithSubscribers:
+        - Notification: {NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80, ThresholdType: PERCENTAGE}
+          Subscribers: [{SubscriptionType: SNS, Address: !Ref AlertTopic}]
+        - Notification: {NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE}
+          Subscribers: [{SubscriptionType: SNS, Address: !Ref AlertTopic}]
+
+Outputs:
+  WebUrl:
+    Description: Password-protected address for data files, the query page and the query API.
+    Value: !Sub "https://${Distribution.DomainName}"
+  DataBucketName:
+    Value: !Ref DataBucket
+  RecorderInstanceId:
+    Value: !Ref RecorderInstance
+  AthenaWorkGroupName:
+    Value: !Ref AthenaWorkGroup
+  GlueDatabaseName:
+    Value: prediction_market_arb

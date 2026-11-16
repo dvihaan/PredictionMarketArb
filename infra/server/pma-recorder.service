@@ -1,0 +1,23 @@
+[Unit]
+Description=Prediction market recorder (Kalshi + Polymarket WebSocket order books and trades)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=pma
+EnvironmentFile=/etc/pma.env
+WorkingDirectory=/opt/pma/app
+ExecStart=/opt/pma/venv/bin/python -u -m recorder.main \
+  --out /opt/pma/data \
+  --s3-bucket ${PMA_BUCKET} \
+  --pairs s3://${PMA_BUCKET}/ref/pairs/current.json \
+  --region ${AWS_REGION} \
+  --metrics-namespace ${PMA_METRICS_NAMESPACE}
+Restart=always
+RestartSec=10
+# SIGINT lets the recorder close its open raw files and upload them before exiting.
+KillSignal=SIGINT
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
