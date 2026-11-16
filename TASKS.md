@@ -34,7 +34,9 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
   - [x] Stored in SSM Parameter Store by Binoy (2026-11-15): `/prediction-market-arb/kalshi/key-id` and `/prediction-market-arb/kalshi/private-key`. Both are Standard tier SecureStrings in us-east-1, encrypted with `alias/aws/ssm`. Checked: the key ID is a UUID; the private key is a complete PKCS#8 PEM with a trailing newline, so the recorder must strip whitespace when loading it.
   - [?] Both parameters are tagged only `project=prediction-market-arb`; `environment=dev` and `owner=binoy` are missing
   - [ ] Stage 5 IAM role: allow `ssm:GetParameter` on `/prediction-market-arb/kalshi/*` (decrypting with the AWS-managed key needs no extra KMS grant)
-- [ ] 1.2 `recorder/books.py`: rebuild books from snapshots and deltas, top 25 levels; resync on a seq gap. Unit tests.
+- [x] 1.2 `recorder/books.py`: `KalshiBook` (snapshot + signed deltas), `SeqTracker` (per-sid gap detection, reset on reconnect), `PolyBook` (book + absolute-size price changes, YES/NO view in record.py's format). Top 25 levels; same price/size rounding as `record.levels()`. `tests/test_books.py`: 11 tests, incl. fixture replays (the Polymarket YES/NO mirror holds after 91 changes).
+  - Local dev env: `.venv` on Python 3.12.13; run tests with `.venv/bin/python -m unittest discover -s tests`
+  - [ ] Check Kalshi delta replay against a REST book during the Stage 6.2 smoke test (can't be done offline)
 - [ ] 1.3 `recorder/poly_ws.py`, `recorder/kalshi_ws.py`: connect, subscribe, reconnect with backoff, heartbeat
 - [ ] 1.4 `recorder/sink.py`: gzip JSONL raw files rotated every 5 min; upload to S3 (or a local dir in dev)
 - [ ] 1.5 `recorder/pairs.py`: reload pairs (local file or S3) every 5 min; drop markets once they close
