@@ -96,8 +96,8 @@ class CompactTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def run_day(self, d):
-        process_day(self.store, d, log=self.logs.append)
+    def run_day(self, d, today="2026-12-31"):
+        process_day(self.store, d, log=self.logs.append, today=today)
 
     def books(self, venue, d):
         key = f"curated/books/venue={venue}/date={d}/part-0.parquet"
@@ -126,6 +126,18 @@ class CompactTest(unittest.TestCase):
         self.assertEqual(len(d2), 1)
         self.assertEqual(d2[0]["yes_bids"], [{"price": 0.4, "size": 15.0}])
         self.assertEqual(d2[0]["no_bids"], [])
+
+    def test_refresh_of_today_never_saves_end_of_day_books(self):
+        r = self.raw
+        r.kalshi(T1 + 1000, **snap("K", [(0.40, 10)]))
+        r.kalshi(T2 + 1000, **delta("K", "yes", 0.40, 1, T2))
+        r.close()
+        self.run_day(D2, today=D2)            # 3-hourly refresh of a day in progress; D1 caught up first
+        self.assertTrue(self.store.exists(f"curated/_state/books/date={D1}.json"))    # complete day: saved
+        self.assertFalse(self.store.exists(f"curated/_state/books/date={D2}.json"))   # today: not saved
+        self.assertTrue(self.store.exists(f"curated/books/venue=kalshi/date={D2}/part-0.parquet"))
+        self.assertEqual(self.books("kalshi", D2)[0]["yes_bids"], [{"price": 0.4, "size": 11.0}])
+        self.assertIn("day in progress", self.logs[-1])
 
     def test_catch_up_processes_missing_previous_day(self):
         r = self.raw

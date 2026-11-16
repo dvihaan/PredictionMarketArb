@@ -3,6 +3,7 @@
     .venv/bin/python -m recorder.compact --store data/raw-local                 # yesterday (UTC)
     .venv/bin/python -m recorder.compact --store s3://<bucket> --date 2026-11-16
     .venv/bin/python -m recorder.compact --store data/raw-local --date 2026-11-16 --days 3
+    .venv/bin/python -m recorder.compact --store s3://<bucket> --today        # 3-hourly refresh of today so far
 
 Reads raw/stream=*/date=D/ and writes, overwriting any earlier output for the same day:
 
@@ -323,13 +324,21 @@ def coverage_table(coverage):
 
 # ---- one day ------------------------------------------------------------------------------------
 
-def process_day(store, d, log=print, depth=0):
+def utc_today():
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def process_day(store, d, log=print, depth=0, today=None):
+    """Rebuild one day's curated tables. A past day also saves its end-of-day books, the starting
+    point for the next day. Today (a refresh of a day still in progress) never does: a mid-day
+    snapshot saved as "end of day" would silently corrupt the next day if the nightly run failed."""
     started = time.monotonic()
+    today = today or utc_today()
     prev = day_before(d)
     state = load_state(store, prev)
     if state is None and has_raw(store, prev) and depth < MAX_CATCH_UP:
         log(f"{d}: {prev} has not been processed yet; processing it first")
-        process_day(store, prev, log, depth + 1)
+        process_day(store, prev, log, depth + 1, today)
         state = load_state(store, prev)
     if state is None:
         state = {"kalshi": {}, "poly": {}}
@@ -351,10 +360,13 @@ def process_day(store, d, log=print, depth=0):
         store.write(f"curated/books/venue={venue}/date={d}/part-0.parquet", data)
         summary[venue] = (out.rows, len(data))
     n_trades = {v: upsert_trades(store, v, rows) for v, rows in trades.items()}
-    store.write(state_key(d), dump_state(state["kalshi"], state["poly"]))
+    complete = d < today
+    if complete:
+        store.write(state_key(d), dump_state(state["kalshi"], state["poly"]))
     log(f"{d}: kalshi {summary['kalshi'][0]} book rows ({summary['kalshi'][1] / 1e6:.1f} MB), "
         f"poly {summary['poly'][0]} book rows ({summary['poly'][1] / 1e6:.1f} MB), "
-        f"{n_cov} coverage events, trades written {n_trades}, {time.monotonic() - started:.0f} s")
+        f"{n_cov} coverage events, trades written {n_trades}, {time.monotonic() - started:.0f} s"
+        + ("" if complete else " (day in progress: end-of-day books not saved)"))
 
 
 MANIFEST_KEY = "curated/manifest.json"
@@ -385,10 +397,14 @@ def main(argv=None):
     ap.add_argument("--pairs", help="pairs file (path or s3://); if given, also snapshot today's reference data")
     ap.add_argument("--metrics-namespace", help="report NightlyOK=1 to CloudWatch after a successful run")
     ap.add_argument("--manifest-only", action="store_true", help="only rebuild curated/manifest.json")
+    ap.add_argument("--today", action="store_true",
+                    help="refresh today's tables so far (the 3-hourly refresh); never saves end-of-day books")
     args = ap.parse_args(argv)
     if args.manifest_only:
         print(f"manifest: {write_manifest(open_store(args.store, args.region))}", flush=True)
         return 0
+    if args.today:
+        args.date, args.days = utc_today(), 1
     end = Date.fromisoformat(args.date) if args.date else datetime.now(timezone.utc).date() - timedelta(days=1)
     store = open_store(args.store, args.region)
     if args.pairs:

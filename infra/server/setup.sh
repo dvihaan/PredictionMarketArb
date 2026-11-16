@@ -49,10 +49,12 @@ echo "== systemd units"
 install -m 0644 "$APP"/infra/server/pma-recorder.service /etc/systemd/system/
 install -m 0644 "$APP"/infra/server/pma-compact.service /etc/systemd/system/
 install -m 0644 "$APP"/infra/server/pma-compact.timer /etc/systemd/system/
+install -m 0644 "$APP"/infra/server/pma-refresh.service /etc/systemd/system/
+install -m 0644 "$APP"/infra/server/pma-refresh.timer /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable pma-recorder.service pma-compact.timer
+systemctl enable pma-recorder.service pma-compact.timer pma-refresh.timer
 systemctl restart pma-recorder.service
-systemctl start pma-compact.timer
+systemctl start pma-compact.timer pma-refresh.timer
 
 sleep 5
 systemctl --no-pager --lines=5 status pma-recorder.service || true

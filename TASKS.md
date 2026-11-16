@@ -221,6 +221,14 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
     - Binoy uploaded the new `index.html`. Live copy verified byte-identical through CloudFront; the same query via DuckDB over the live address returns the Athena result exactly.
     - [ ] Binoy to confirm visually in the browser
   - [ ] Check the first nightly run (2026-11-17 00:31 UTC): success, NightlyOK clears the alarm, and peak memory on a full day (~30× today's partial run)
+- [~] 6.6 **3-hourly refresh of today's tables** (Binoy, 2026-11-16). Until now, clean tables were rebuilt only nightly, so they lagged up to ~24.5 h.
+  - `recorder.compact --today` rebuilds today's books, trades and coverage plus the manifest
+  - Processing today never saves end-of-day books; only a past day does, enforced in `process_day` with a regression test. A mid-day snapshot saved as "end of day" would corrupt the next day if a nightly run failed.
+  - `pma-refresh.timer` runs at 03,06,09,12,15,18,21:15 UTC (00:xx is left to the nightly job at 00:31) and sends no NightlyOK. Both jobs take `flock /opt/pma/data/compact.lock`, so they never overlap.
+  - Cost: each refresh reprocesses today from midnight, ~5–7 min for a full day (estimate), within the nano's CPU allowance at this frequency
+  - [ ] Push, then `infra/update.sh`. The update restarts the recorder (a few-second gap, logged in coverage).
+  - [ ] Delete the mid-day checkpoint `curated/_state/books/date=2026-11-16.json` left by the earlier one-off run (written before this rule existed), so a failed nightly run can't pick it up
+  - [ ] Check the timers on the server and the first refresh's duration and memory peak
 - [ ] 6.4 Stop the service; confirm the alarm email arrives (after both subscriptions are confirmed)
 - [ ] 6.5 Activate cost-allocation tags in Billing (manual); check Cost Explorer after 24 h. `Project` is already active; `environment` and `owner` are optional.
 
@@ -269,6 +277,7 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-16 | Tag key `Project` (capital P, the account's active cost-allocation tag) instead of lowercase `project` | Binoy |
 | 2026-11-16 | Code reaches the server by `git clone` from the public GitHub repo (not an S3 bundle) | Binoy |
 | 2026-11-16 | Binoy copies the Kalshi key parameters to us-east-2 himself | Binoy |
+| 2026-11-16 | Add a **3-hourly refresh** of today's clean tables, on top of the nightly run | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions

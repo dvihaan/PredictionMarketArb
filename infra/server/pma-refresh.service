@@ -1,0 +1,18 @@
+[Unit]
+Description=3-hourly refresh: rebuild today's curated tables so far (no end-of-day books, no NightlyOK)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pma
+EnvironmentFile=/etc/pma.env
+WorkingDirectory=/opt/pma/app
+# Shares a lock with the nightly job, so the two never rewrite the same files at once.
+ExecStart=/usr/bin/flock --wait 3600 /opt/pma/data/compact.lock \
+  /opt/pma/venv/bin/python -u -m recorder.compact \
+  --store s3://${PMA_BUCKET} \
+  --region ${AWS_REGION} \
+  --today
+Nice=10
+CPUWeight=20
+IOWeight=20

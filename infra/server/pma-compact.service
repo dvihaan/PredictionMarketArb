@@ -7,7 +7,9 @@ Type=oneshot
 User=pma
 EnvironmentFile=/etc/pma.env
 WorkingDirectory=/opt/pma/app
-ExecStart=/opt/pma/venv/bin/python -u -m recorder.compact \
+# Shares a lock with the 3-hourly refresh, so the two never rewrite the same files at once.
+ExecStart=/usr/bin/flock --wait 3600 /opt/pma/data/compact.lock \
+  /opt/pma/venv/bin/python -u -m recorder.compact \
   --store s3://${PMA_BUCKET} \
   --pairs s3://${PMA_BUCKET}/ref/pairs/current.json \
   --region ${AWS_REGION} \
