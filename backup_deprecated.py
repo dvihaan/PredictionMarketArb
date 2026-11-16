@@ -1,4 +1,6 @@
-"""Write a consistent copy of the recorder database, safe while record.py is running.
+"""DEPRECATED - do not use. Kept for reference only. Replaced by raw files uploaded to S3 by the new recorder; SQLite is no longer written.
+
+Write a consistent copy of the recorder database, safe while record.py is running.
 
 Copying books.sqlite directly while it is being written can produce a broken file.
 

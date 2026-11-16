@@ -1,4 +1,6 @@
-"""Turn recorded books into after-fee, depth-aware edge episodes.
+"""DEPRECATED - do not use. Kept for reference only. Replaced by analyze_stream.py (same results, streams the database instead of loading it into memory).
+
+Turn recorded books into after-fee, depth-aware edge episodes.
 
 An episode is an unbroken run of cycles in which one hedge was fillable at a profit.
 Episodes are cut when coverage is lost, and marked so, because their true length is unknown.

@@ -1,4 +1,6 @@
-"""Record public order books for every pair in watchlist.json. Read-only: no keys, no orders.
+"""DEPRECATED - do not use. Kept for reference only. Replaced by the new WebSocket recorder: python -m recorder.main (trade fetchers now in recorder/rest_trades.py).
+
+Record public order books for every pair in watchlist.json. Read-only: no keys, no orders.
 
 Each polling cycle is logged, including failures, so analysis can tell "no change"
 apart from "no data". A book row is written only when that book changed.

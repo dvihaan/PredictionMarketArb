@@ -12,7 +12,7 @@ import time
 
 import requests
 
-import record   # Vihaan's recorder: kalshi_trades(), poly_trades(), chunks(), TRADE_LAG_MS, POLY_TRADE_BATCH
+from recorder import rest_trades as record   # fetchers moved unchanged from record_deprecated.py
 
 FIELDS = ("venue", "trade_id", "market", "ts_ms", "yes_price", "size", "taker")
 

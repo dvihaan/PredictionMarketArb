@@ -48,8 +48,8 @@ def parse_args(argv=None):
     ap.add_argument("--kalshi-key-id", help="Kalshi key id, required with --kalshi-key-file")
     ap.add_argument("--no-kalshi", action="store_true", help="record Polymarket only")
     ap.add_argument("--rotate", type=float, default=300, help="seconds per raw file (default 300)")
-    ap.add_argument("--poly-check", type=float, default=120,
-                    help="seconds between Polymarket REST book checks (default 120, 0 = off)")
+    ap.add_argument("--poly-check", type=float, default=30,
+                    help="seconds between Polymarket REST book checks (default 30, 0 = off)")
     ap.add_argument("--pairs-reload", type=float, default=300, help="seconds between pairs file reloads (default 300)")
     ap.add_argument("--trade-interval", type=float, default=60, help="seconds between trade polls (default 60, 0 = off)")
     ap.add_argument("--backfill-hours", type=float, default=24,
@@ -148,8 +148,8 @@ async def run(args):
     async def status():
         k = (f"kalshi msgs={kalshi.messages} books={len(kalshi.books)}/{len(kalshi.tickers - kalshi.closed)} "
              f"resyncs={kalshi.resyncs} closed={len(kalshi.closed)} ") if kalshi else ""
-        log(f"status: {k}poly msgs={poly.messages} books={len(poly.books)}/{len(poly.tokens)} "
-            f"mismatches={poly.mismatches} trades={trade_count[0]}")
+        log(f"status: {k}poly msgs={poly.messages} books={len(poly.books)}/{len(poly.tokens - poly.closed)} "
+            f"mismatches={poly.mismatches} closed={len(poly.closed)} trades={trade_count[0]}")
 
     tasks += [asyncio.ensure_future(every(stop, 5, rotate)),
               asyncio.ensure_future(every(stop, args.pairs_reload, reload_pairs)),

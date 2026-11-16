@@ -98,6 +98,26 @@ class PolyFeedTest(unittest.TestCase):
         self.feed._handle("PONG")
         self.assertEqual(self.sink.rows, [])
 
+    def test_bookless_token_closed_or_resubscribed(self):
+        """A token with no book is unsubscribed if its market is closed, re-subscribed if REST has a book."""
+        import recorder.poly_ws as pw
+        self.feed.ws = FakeWS()
+        self.feed.tokens = {"Y", "C", "M"}
+        self.feed.subscribed = {"Y", "C", "M"}
+        events = []
+        self.feed.coverage = lambda venue, event, **kw: events.append((event, kw))
+        original = pw.market_closed
+        pw.market_closed = lambda session, token: token == "C"
+        try:
+            run(self.feed._handle_bookless(["C", "M"], rest={"M": {"bids": [], "asks": []}}))
+        finally:
+            pw.market_closed = original
+        self.assertEqual(self.feed.closed, {"C"})
+        self.assertEqual(self.feed.subscribed, {"Y", "M"})
+        self.assertIn(("book_missing", {"tokens": ["M"]}), events)
+        self.assertIn({"assets_ids": ["C"], "operation": "unsubscribe"}, self.feed.ws.sent)
+        self.assertIn({"assets_ids": ["M"], "operation": "subscribe"}, self.feed.ws.sent)
+
     def test_same_book(self):
         local = PolyBook.from_book({"bids": [{"price": "0.51", "size": "1478.39"}],
                                     "asks": [{"price": "0.53", "size": "5"}]})

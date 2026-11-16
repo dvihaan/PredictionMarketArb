@@ -1,3 +1,4 @@
+# DEPRECATED - do not use. Runs the old SQLite recorder (record_deprecated.py).
 [Unit]
 Description=Kalshi and Polymarket order book recorder
 Wants=network-online.target
@@ -6,7 +7,7 @@ After=network-online.target
 [Service]
 User=__USER__
 WorkingDirectory=__APP_DIR__
-ExecStart=/usr/bin/python3 -u record.py
+ExecStart=/usr/bin/python3 -u record_deprecated.py
 Restart=always
 RestartSec=10
 KillSignal=SIGINT

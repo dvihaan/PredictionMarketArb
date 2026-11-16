@@ -50,8 +50,9 @@ def same_book(local, rest):
 class PolyFeed:
     def __init__(self, sink, coverage, url=WS_URL, log=print):
         self.sink, self.coverage, self.url, self.log = sink, coverage, url, log
-        self.tokens = set()
-        self.subscribed = set()
+        self.tokens = set()               # what the pairs file asks for
+        self.subscribed = set()           # what the live connection has
+        self.closed = set()               # resolved markets; not resubscribed while still in the pairs file
         self.books = {}
         self.ws = None
         self.messages = 0
@@ -88,9 +89,10 @@ class PolyFeed:
             self.books.clear()
             self.coverage("poly", "connected")
             self.log("poly: connected")
-            if self.tokens:
-                await ws.send(json.dumps({"assets_ids": sorted(self.tokens), "type": "market"}))
-                self.subscribed = set(self.tokens)
+            want = self.tokens - self.closed
+            if want:
+                await ws.send(json.dumps({"assets_ids": sorted(want), "type": "market"}))
+                self.subscribed = set(want)
             pinger = asyncio.ensure_future(self._ping(ws))
             stopper = asyncio.ensure_future(stop.wait())
             try:
@@ -115,14 +117,15 @@ class PolyFeed:
             await ws.send("PING")
 
     async def _sync_subscriptions(self):
-        add, drop = sorted(self.tokens - self.subscribed), sorted(self.subscribed - self.tokens)
+        want = self.tokens - self.closed
+        add, drop = sorted(want - self.subscribed), sorted(self.subscribed - want)
         if add:
             await self.ws.send(json.dumps({"assets_ids": add, "operation": "subscribe"}))
         if drop:
             await self.ws.send(json.dumps({"assets_ids": drop, "operation": "unsubscribe"}))
             for t in drop:
                 self.books.pop(t, None)
-        self.subscribed = set(self.tokens)
+        self.subscribed = set(want)
         if add or drop:
             self.coverage("poly", "markets_changed", added=add, dropped=drop)
 
@@ -156,7 +159,7 @@ class PolyFeed:
     async def check_loop(self, stop, interval_s):
         while not stop.is_set():
             await asyncio.wait([asyncio.ensure_future(stop.wait())], timeout=interval_s)
-            if stop.is_set() or self.ws is None or not self.books:
+            if stop.is_set() or self.ws is None or not self.subscribed:
                 continue
             try:
                 await self.check_once()
@@ -165,8 +168,9 @@ class PolyFeed:
                 self.log(f"poly: REST check failed: {type(e).__name__}: {e}")
 
     async def check_once(self):
-        tokens = sorted(self.books)
+        tokens = sorted(self.subscribed)
         rest = await self._fetch(tokens)
+        await self._handle_bookless([t for t in tokens if t not in self.books], rest)
         bad = [t for t in tokens if t in rest and t in self.books and not same_book(self.books[t], rest[t])]
         if not bad:
             return []
@@ -181,10 +185,40 @@ class PolyFeed:
             await self.resubscribe(bad)
         return bad
 
+    async def _handle_bookless(self, tokens, rest):
+        """Subscribed tokens that never got a book: either we missed the snapshot, or the market resolved."""
+        missed = [t for t in tokens if t in rest]
+        if missed:
+            self.coverage("poly", "book_missing", tokens=missed)
+            await self.resubscribe(missed)
+        for t in (t for t in tokens if t not in rest):
+            try:
+                closed = await asyncio.to_thread(market_closed, self.http, t)
+            except Exception as e:  # a failed lookup just leaves the token subscribed
+                self.log(f"poly: status check for {t[:12]}… failed: {type(e).__name__}: {e}")
+                continue
+            if closed:
+                self.closed.add(t)
+                self.coverage("poly", "market_closed", token=t)
+                self.log(f"poly: token {t[:12]}… is closed; unsubscribed")
+        if self.closed & self.subscribed:
+            await self._sync_subscriptions()
+
     async def _fetch(self, tokens):
         rest = await asyncio.to_thread(rest_books, self.http, tokens)
         self.sink.write("poly_rest", {"recv_ms": now_ms(), "books": list(rest.values())})
-        missing = sorted(set(tokens) - set(rest))
-        if missing:
-            self.coverage("poly", "rest_missing", tokens=missing)
         return rest
+
+
+GAMMA_MARKETS = "https://gamma-api.polymarket.com/markets"
+
+
+def market_closed(session, token):
+    """True if Polymarket's market metadata says the market for this token is closed.
+
+    The markets endpoint leaves closed markets out unless closed=true is passed, and with it, it
+    returns only closed ones; so the token is closed exactly when this query finds it.
+    """
+    r = session.get(GAMMA_MARKETS, params={"clob_token_ids": token, "closed": "true"}, timeout=15)
+    r.raise_for_status()
+    return any(m.get("closed") for m in r.json())

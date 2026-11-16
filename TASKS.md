@@ -46,7 +46,7 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
   `recorder/poly_ws.py`:
   - YES tokens only; `PING` every 10 s; reconnects after 30 s of silence
   - subscribe/unsubscribe on a live connection
-  - REST book check every `--poly-check` s (default 120): re-checks after 3 s, then re-subscribes tokens that still differ
+  - REST book check every `--poly-check` s (default 30, was 120): re-checks after 3 s, then re-subscribes tokens that still differ
   - REST books saved to the `poly_rest` stream as checkpoints
   - `recorder/auth.py`: key from SSM or a file; RSA-PSS/Ed25519 signing
 - [x] 1.4 `recorder/sink.py`:
@@ -61,10 +61,19 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
   - Live run (150 s, 57 pairs) wrote all 5 streams, backfilled 216 trades and stopped cleanly
   - Bug found and fixed: Kalshi `ok` replies carry seq numbers, and skipping them caused a false gap → regression test added
   - `tests/test_feeds.py` + `tests/test_sink.py`: 27 tests in total, all passing; Vihaan's 25 still pass
-- [?] 1.9 Remove `analyze.py`, `digest.py`, `backup.py`. **Question:** `record.py` is still used for its trade fetchers. Move them into `recorder/` and delete `record.py`, or keep it until the analyzers are ported?
+- [x] 1.9 Old files kept but flagged (Binoy's choice). Each gets a `_deprecated` suffix (via `git mv`, so history follows) and a "DEPRECATED - do not use" header naming its replacement:
+  - `record_deprecated.py`, `analyze_deprecated.py`, `digest_deprecated.py`, `backup_deprecated.py`
+  - `deploy/setup_deprecated.sh`, `deploy/recorder_deprecated.service`, which still work and point at `record_deprecated.py`
+  - The trade fetchers were copied unchanged into `recorder/rest_trades.py`, so no new code imports a deprecated file
+  - README has a banner pointing to the redesign; its body is rewritten in Stage 7
+  - ⚠ Vihaan's scheduled task `predictionmarketarb-daily-update` runs `python digest.py`; it will fail on this branch (the digest is replaced by CloudWatch alarms)
+- [x] 1.10 Polymarket closed-market handling, matching Kalshi. A subscribed token with no book is looked up each check: if REST has a book, it re-subscribes (`book_missing`); if Polymarket's market data says closed, it logs `market_closed` and unsubscribes.
+  - Quirk: Polymarket's markets endpoint omits closed markets unless `closed=true` is passed, and then returns only closed ones
+  - Live: the Alaska governor token was detected closed and unsubscribed; books 56/56
 - **Finding: Polymarket's live feed can be wrong with no fault on our side.** In the first live run, 2 of 57 books diverged within about 2 minutes: one level off by exactly 60 or 20 contracts, from a `price_change` stamped 1 ms after Polymarket's own book timestamp. Both REST and a fresh WS snapshot omitted that change for 25+ s, and no reversing message ever arrived. The REST check caught and fixed both. Implication: between checks, a Polymarket book can be wrong for up to `--poly-check` seconds.
   - [ ] Compaction (Stage 2) should flag the window between a detected mismatch and its correction as suspect
-  - [ ] Watch the mismatch rate over the first days on AWS; consider a shorter check interval
+  - [x] Check interval lowered to 30 s (Binoy, 2026-11-16)
+  - [ ] Watch the mismatch rate over the first days on AWS. Early runs show roughly 1 mismatch per 30 s check across 56 books, each a single level. Investigate whether it's always the same pattern (a `price_change` that Polymarket's own book never includes).
 
 ## Stage 2 — Compaction & migration
 - [ ] 2.1 `compact.py`: raw → curated Parquet (`books`, `trades`, `coverage`), idempotent per date
@@ -136,6 +145,8 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-16 | Server runtime: Python 3.12 from the Amazon Linux 2023 repo; develop and test locally on 3.12 | Binoy |
 | 2026-11-16 | ~~Polymarket: subscribe to both YES and NO tokens~~ **Revised the same day:** YES token only. The NO book is an exact mirror (full depth matched on 3 pairs, mirror held after 91 live changes, shared exchange). NO-token trades still come from the REST trade history; the 120 s REST check catches any divergence. | Binoy |
 | 2026-11-16 | The number of watched pairs comes from the pairs file and isn't hard-coded; it changes on reload | Binoy |
+| 2026-11-16 | Polymarket REST check interval lowered from 120 s to **30 s** after live runs showed feed divergences | Binoy |
+| 2026-11-16 | Old files are kept, renamed with a `_deprecated` suffix and a do-not-use header, rather than deleted | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions

@@ -1,4 +1,6 @@
-"""Build a plain-text digest of what this project has done since the last digest.
+"""DEPRECATED - do not use. Kept for reference only. Replaced by AWS CloudWatch alarms emailed through SNS (see docs/ARCHITECTURE_PLAN.md).
+
+Build a plain-text digest of what this project has done since the last digest.
 
     python digest.py               # print the digest, save it to .digest/latest.txt
     python digest.py --mark-sent   # after the digest was delivered, record it as sent

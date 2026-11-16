@@ -1,3 +1,5 @@
+> **Note (2026-11-16):** this project is being redesigned on the `arch-redesign` branch: see [docs/ARCHITECTURE_PLAN.md](docs/ARCHITECTURE_PLAN.md) and [TASKS.md](TASKS.md). Files ending in `_deprecated` are the old versions, kept for reference only. The instructions below describe the old recorder and will be rewritten.
+
 # Prediction market book recorder
 
 Records public Kalshi and Polymarket order books and trades for the rule-checked pairs in `watchlist.json`, then measures two things:
