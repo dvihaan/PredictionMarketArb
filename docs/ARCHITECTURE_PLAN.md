@@ -59,6 +59,10 @@ Design rationale: always-on stream → EC2 (Batch/Lambda don't fit daemons; Farg
 
 **Estimated monthly cost**: t4g.nano $3.07 + IPv4 $3.65 + 8 GB gp3 $0.64 + CloudWatch ~$1–2 + S3 <$0.10 (≈1 GB/mo) + Athena cents + SSM Parameter Store $0 → **~$9/mo**. AWS Budget (free) at $15 filtered on `project` tag.
 
+> **Layout update (2026-11-16):** the repository is now organized by role. `edge.py`, `maker.py` and the
+> analyzers are in `analysis/`, all tests are in `tests/`, and the replaced originals are in `deprecated/`.
+> File names in the steps below are as originally planned; see the layout table in TASKS.md for current locations.
+
 ## 4. Implementation steps
 0. **Setup (first, before any code change)**:
    - In `PredictionMarketArb/` (clean, on `main`, remote `origin` = github.com/dvihaan/PredictionMarketArb): `git switch -c arch-redesign`. No push until user asks.

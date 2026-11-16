@@ -1,12 +1,13 @@
-"""DEPRECATED - do not use. Kept for reference only. Replaced by analyze_stream.py (same results, streams the database instead of loading it into memory).
+"""Turn recorded books into after-fee, depth-aware edge episodes (streaming version).
 
-Turn recorded books into after-fee, depth-aware edge episodes.
+Gives the same results as analyze.py, but reads the database row by row instead of loading
+every book into memory, so it works on weeks of data and on a small server.
 
 An episode is an unbroken run of cycles in which one hedge was fillable at a profit.
 Episodes are cut when coverage is lost, and marked so, because their true length is unknown.
 
-    python analyze.py
-    python analyze.py --max-gap 30 --csv data/episodes.csv
+    python analyze_stream.py
+    python analyze_stream.py --max-gap 30 --csv data/episodes.csv
 """
 import argparse
 import collections
@@ -20,6 +21,7 @@ from datetime import datetime, timezone
 from edge import baskets, walk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)   # watchlist.json and data/ live in the project root
 FIELDS = ["pair_id", "family", "rule_status", "basket", "start_utc", "duration_s", "cycles", "end_reason",
           "peak_top_edge_c", "peak_profit", "peak_size", "peak_capital", "peak_return_pct", "peak_annualized_pct",
           "est_resolution", "kalshi_question", "poly_question"]
@@ -84,10 +86,10 @@ def row(ep):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--watchlist", default=os.path.join(HERE, "watchlist.json"))
-    ap.add_argument("--db", default=os.path.join(HERE, "data", "books.sqlite"))
+    ap.add_argument("--watchlist", default=os.path.join(ROOT, "watchlist.json"))
+    ap.add_argument("--db", default=os.path.join(ROOT, "data", "books.sqlite"))
     ap.add_argument("--max-gap", type=float, default=30, help="a longer gap between cycles counts as lost coverage (seconds)")
-    ap.add_argument("--csv", default=os.path.join(HERE, "data", "episodes.csv"))
+    ap.add_argument("--csv", default=os.path.join(ROOT, "data", "episodes.csv"))
     args = ap.parse_args()
 
     pairs = json.load(open(args.watchlist, encoding="utf-8"))["pairs"]
@@ -96,22 +98,38 @@ def main():
         by_market[("kalshi", p["kalshi_ticker"])].append(p)
         by_market[("poly", p["poly_yes_token"])].append(p)
 
-    db = sqlite3.connect(f"file:{args.db}?mode=ro", uri=True)
-    cycles = db.execute("SELECT id, started_ms, finished_ms, missing FROM cycles ORDER BY id").fetchall()
-    if not cycles:
+    # Stream both tables in cycle order inside one read transaction, so memory stays flat
+    # however long the recording is, and a recorder writing at the same time can't skew the snapshot.
+    db = sqlite3.connect(f"file:{args.db}?mode=ro", uri=True, isolation_level=None)
+    db.execute("BEGIN")
+    first_ms, last_ms, n_cycles, max_id = db.execute(
+        "SELECT MIN(started_ms), MAX(started_ms), COUNT(*), MAX(id) FROM cycles").fetchone()
+    if not n_cycles:
         print("No cycles recorded yet.")
         return
-    updates = collections.defaultdict(list)
-    for cid, venue, market, yes, no in db.execute("SELECT cycle_id, venue, market, yes_bids, no_bids FROM books ORDER BY rowid"):
-        updates[cid].append((venue, market, yes, no))
+    cycle_rows = db.cursor().execute(
+        "SELECT id, started_ms, finished_ms, missing FROM cycles WHERE id <= ? ORDER BY id", (max_id,))
+    book_rows = db.cursor().execute(
+        "SELECT cycle_id, venue, market, yes_bids, no_bids FROM books WHERE cycle_id <= ? ORDER BY cycle_id, rowid",
+        (max_id,))
+    pending = next(book_rows, None)
+    n_book_rows = 0
 
     state, tracker = {}, Tracker()
     unknown = set()
     prev_ms = None
     gaps = []
     latencies = []
-    for cid, started, finished, missing in cycles:
+    partial = 0
+    for cid, started, finished, missing in cycle_rows:
         latencies.append(finished - started)
+        partial += bool(missing)
+        updates = []
+        while pending is not None and pending[0] <= cid:
+            if pending[0] == cid:
+                updates.append(pending[1:])
+            pending = next(book_rows, None)
+        n_book_rows += len(updates)
         dirty = set()
         if prev_ms is not None and (started - prev_ms) / 1000 > args.max_gap:
             tracker.close_all(prev_ms, "coverage_gap")
@@ -120,7 +138,7 @@ def main():
             dirty.update(p["pair_id"] for p in pairs)
         prev_ms = started
 
-        for venue, market, yes, no in updates.get(cid, []):
+        for venue, market, yes, no in updates:
             state[(venue, market)] = dict(yes_bids=json.loads(yes), no_bids=json.loads(no))
             dirty.update(p["pair_id"] for p in by_market.get((venue, market), []))
 
@@ -154,7 +172,8 @@ def main():
                             poly_min_size=p["poly_min_order"])
                 tracker.update(p, name, fill, started)
 
-    last_ms = cycles[-1][1]
+    db.execute("COMMIT")
+    db.close()
     tracker.close_all(last_ms, "still_open")
     rows = sorted((row(e) for e in tracker.done), key=lambda r: -r["peak_profit"])
     with open(args.csv, "w", newline="", encoding="utf-8") as f:
@@ -162,13 +181,12 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
-    span = (cycles[-1][1] - cycles[0][1]) / 1000
+    span = (last_ms - first_ms) / 1000
     lost = sum(b - a for a, b in gaps) / 1000
-    partial = sum(1 for c in cycles if c[3])
-    print(f"Coverage: {len(cycles)} cycles over {span / 3600:.2f} h, {len(gaps)} gaps totalling {lost:.0f} s, "
+    print(f"Coverage: {n_cycles} cycles over {span / 3600:.2f} h, {len(gaps)} gaps totalling {lost:.0f} s, "
           f"{partial} cycles with a missing book")
     print(f"Cycle fetch time: median {statistics.median(latencies):.0f} ms, max {max(latencies)} ms")
-    print(f"Book rows: {sum(len(v) for v in updates.values())}. Pairs on watchlist: {len(pairs)}")
+    print(f"Book rows: {n_book_rows}. Pairs on watchlist: {len(pairs)}")
     print(f"\nEpisodes with positive after-fee profit: {len(rows)} (written to {args.csv})")
     if not rows:
         return

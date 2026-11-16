@@ -7,8 +7,22 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
 **Working rules**
 - Ask Binoy before any major design or implementation decision; record the answer in the Decisions log.
 - Keep this file current as work happens; expand a stage's steps when we learn something new.
-- Leave `edge.py` and `maker.py` unchanged. Their tests must stay green throughout.
+- Leave the contents of `analysis/edge.py` and `analysis/maker.py` unchanged. Their tests must stay green throughout.
 - Don't push to `origin` until asked.
+- Run all tests: `.venv/bin/python -m unittest discover -s tests`
+
+**Repository layout** (since 2026-11-16)
+| Folder | Contents |
+|---|---|
+| `recorder/` | Live WebSocket recorder that runs on EC2 (`python -m recorder.main`) |
+| `analysis/` | Vihaan's edge/maker math and analyzers (`edge.py`, `maker.py`, `analyze_stream.py`, `analyze_maker.py`) |
+| `tools/` | One-off utilities, not part of the running system (`probe_ws.py`) |
+| `tests/` | All tests, incl. Vihaan's `test_edge.py`/`test_maker.py`; captured messages in `tests/fixtures/` |
+| `infra/` | CloudFormation and deploy scripts (Stage 5) |
+| `docs/` | Architecture plan, Kalshi key guide |
+| `deprecated/` | Original versions, reference only; see `deprecated/README.md` |
+| `data/` | Local data (SQLite recording, CSV outputs) |
+| root | `README.md`, `TASKS.md`, `requirements.txt`, `watchlist.json` (the pairs file) |
 
 ---
 
@@ -61,12 +75,19 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
   - Live run (150 s, 57 pairs) wrote all 5 streams, backfilled 216 trades and stopped cleanly
   - Bug found and fixed: Kalshi `ok` replies carry seq numbers, and skipping them caused a false gap → regression test added
   - `tests/test_feeds.py` + `tests/test_sink.py`: 27 tests in total, all passing; Vihaan's 25 still pass
-- [x] 1.9 Old files kept but flagged (Binoy's choice). Each gets a `_deprecated` suffix (via `git mv`, so history follows) and a "DEPRECATED - do not use" header naming its replacement:
-  - `record_deprecated.py`, `analyze_deprecated.py`, `digest_deprecated.py`, `backup_deprecated.py`
-  - `deploy/setup_deprecated.sh`, `deploy/recorder_deprecated.service`, which still work and point at `record_deprecated.py`
+- [x] 1.9 Old files kept but flagged (Binoy's choice), each with a "DEPRECATED - do not use" header naming its replacement:
+  - `deprecated/record.py`, `deprecated/analyze.py`, `deprecated/digest.py`, `deprecated/backup.py`
+  - `deprecated/deploy/setup.sh`, `deprecated/deploy/recorder.service`
+  - `deprecated/README.md` lists what replaced each one
+  - Moved with `git mv`, so history follows. A first pass used a `_deprecated` filename suffix at the root; it was replaced the same day by the folder.
   - The trade fetchers were copied unchanged into `recorder/rest_trades.py`, so no new code imports a deprecated file
-  - README has a banner pointing to the redesign; its body is rewritten in Stage 7
+  - README has a banner pointing to the redesign and the moved files; its body is rewritten in Stage 7
   - ⚠ Vihaan's scheduled task `predictionmarketarb-daily-update` runs `python digest.py`; it will fail on this branch (the digest is replaced by CloudWatch alarms)
+- [x] 1.11 Repository reorganized by role (Binoy, 2026-11-16):
+  - `edge.py`, `maker.py`, `analyze_stream.py`, `analyze_maker.py` → `analysis/`, contents unchanged except the analyzers' default paths, which now point to the project root
+  - `test_edge.py`, `test_maker.py` → `tests/`, with a two-line path setup added
+  - Untracked Vihaan's committed `__pycache__/*.pyc` (already in `.gitignore`)
+  - Verified: all 53 tests pass with one command; both analyzers give **byte-identical** CSV output before and after the move; the recorder still starts
 - [x] 1.10 Polymarket closed-market handling, matching Kalshi. A subscribed token with no book is looked up each check: if REST has a book, it re-subscribes (`book_missing`); if Polymarket's market data says closed, it logs `market_closed` and unsubscribes.
   - Quirk: Polymarket's markets endpoint omits closed markets unless `closed=true` is passed, and then returns only closed ones
   - Live: the Alaska governor token was detected closed and unsubscribed; books 56/56
@@ -146,7 +167,8 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-16 | ~~Polymarket: subscribe to both YES and NO tokens~~ **Revised the same day:** YES token only. The NO book is an exact mirror (full depth matched on 3 pairs, mirror held after 91 live changes, shared exchange). NO-token trades still come from the REST trade history; the 120 s REST check catches any divergence. | Binoy |
 | 2026-11-16 | The number of watched pairs comes from the pairs file and isn't hard-coded; it changes on reload | Binoy |
 | 2026-11-16 | Polymarket REST check interval lowered from 120 s to **30 s** after live runs showed feed divergences | Binoy |
-| 2026-11-16 | Old files are kept, renamed with a `_deprecated` suffix and a do-not-use header, rather than deleted | Binoy |
+| 2026-11-16 | Old files are kept with a do-not-use header rather than deleted; first renamed with a `_deprecated` suffix, then (same day) moved into a `deprecated/` folder under their original names | Binoy |
+| 2026-11-16 | Repository organized by role: `recorder/`, `analysis/`, `tools/`, `tests/`, `infra/`, `docs/`, `deprecated/`; compiled caches untracked | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions

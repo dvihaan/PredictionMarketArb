@@ -1,4 +1,4 @@
-"""REST trade fetchers for both venues, moved unchanged from Vihaan's record.py (now record_deprecated.py).
+"""REST trade fetchers for both venues, moved unchanged from Vihaan's original recorder (deprecated/record.py).
 
 Both venues publish full trade history, so these can backfill any period:
   kalshi_trades(session, ticker, since_ms, stop)        -> rows for one Kalshi market

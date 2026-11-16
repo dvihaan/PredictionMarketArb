@@ -17,7 +17,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, ROOT)          # record.py lives in the project root
+sys.path.insert(0, ROOT)          # lets "python recorder/main.py" find the recorder package
 
 from recorder import pairs as pairs_mod  # noqa: E402
 from recorder.auth import KalshiKey  # noqa: E402

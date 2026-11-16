@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from maker import QuoteSim
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)   # watchlist.json and data/ live in the project root
 MODELS = ("queue", "through")
 FIELDS = ["model", "pair_id", "family", "maker_venue", "side", "fill_utc", "kind", "price", "size", "hedged",
           "hedge_delay_s", "quoted_edge_c", "realized_edge_c", "profit", "capital", "annualized_pct",
@@ -42,8 +43,8 @@ def annualized(ret, ms, end_ms):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--watchlist", default=os.path.join(HERE, "watchlist.json"))
-    ap.add_argument("--db", default=os.path.join(HERE, "data", "books.sqlite"))
+    ap.add_argument("--watchlist", default=os.path.join(ROOT, "watchlist.json"))
+    ap.add_argument("--db", default=os.path.join(ROOT, "data", "books.sqlite"))
     ap.add_argument("--max-gap", type=float, default=30, help="a longer gap between cycles counts as lost coverage (seconds)")
     ap.add_argument("--size", type=float, default=100, help="contracts per quote (default 100)")
     ap.add_argument("--min-edge", type=float, default=0.0, help="only quote above this hedged edge, in cents (default 0)")
@@ -51,7 +52,7 @@ def main():
                     help="only quote if the edge is at least this annualized return to resolution, in percent (default 10)")
     ap.add_argument("--min-rest", type=float, default=10.0,
                     help="seconds a quote must rest before a trade can fill it (default 10)")
-    ap.add_argument("--csv", default=os.path.join(HERE, "data", "maker_fills.csv"))
+    ap.add_argument("--csv", default=os.path.join(ROOT, "data", "maker_fills.csv"))
     args = ap.parse_args()
 
     pairs = json.load(open(args.watchlist, encoding="utf-8"))["pairs"]

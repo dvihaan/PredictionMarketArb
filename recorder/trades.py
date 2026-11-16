@@ -12,7 +12,7 @@ import time
 
 import requests
 
-from recorder import rest_trades as record   # fetchers moved unchanged from record_deprecated.py
+from recorder import rest_trades as record   # fetchers moved unchanged from deprecated/record.py
 
 FIELDS = ("venue", "trade_id", "market", "ts_ms", "yes_price", "size", "taker")
 

@@ -1,4 +1,4 @@
-"""DEPRECATED - do not use. Kept for reference only. Replaced by the new WebSocket recorder: python -m recorder.main (trade fetchers now in recorder/rest_trades.py).
+"""DEPRECATED - do not use. Kept for reference only. Replaced by the WebSocket recorder: python -m recorder.main (its trade fetchers now live in recorder/rest_trades.py).
 
 Record public order books for every pair in watchlist.json. Read-only: no keys, no orders.
 
