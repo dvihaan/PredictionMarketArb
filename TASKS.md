@@ -75,6 +75,8 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
 ## Stage 7 — Docs
 - [ ] 7.1 Rewrite README: architecture, Kalshi key setup, deploy, querying (Athena + DuckDB), cost, teardown
 - [ ] 7.2 Handoff notes for Vihaan (what changed and why)
+- [x] 7.3 `docs/KALSHI_API_KEY.md`: key-pair generation (macOS/Linux + Windows), read-only key creation, SSM storage, rotation. `*.pem` added to `.gitignore`.
+  - [ ] Fill in the recorder's key flags/env vars once Stage 1 defines them; confirm the Windows steps on a Windows machine
 
 ---
 
