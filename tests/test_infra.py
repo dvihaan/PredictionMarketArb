@@ -86,11 +86,13 @@ const fs = require('fs');
 const html = fs.readFileSync(process.argv[2], 'utf8');
 const src = html.slice(html.indexOf('// formatValue-begin'), html.indexOf('// formatValue-end'));
 const formatValue = new Function(src + '; return formatValue;')();
-// An Arrow HUGEINT/DECIMAL value: an object whose toJSON() gives the digits as a string.
-const dec = (s) => ({toJSON: () => s});
+// An Arrow DecimalBigNum (HUGEINT/DECIMAL), as apache-arrow 17 behaves: String() gives the digits,
+// toJSON() gives them wrapped in quote characters (the cause of the quoted suspect_rows bug).
+const dec = (s) => ({toString: () => s, toJSON: () => JSON.stringify(s)});
 const cases = [
   ['date from epoch ms (Nov 9 bug report)', formatValue(1794268800000, 'Date32<DAY>'), '2026-11-10'],
   ['HUGEINT sum (the escaped-quotes bug report)', formatValue(dec('606'), 'Decimal[38e0]'), '606'],
+  ['HUGEINT zero', formatValue(dec('0'), 'Decimal[38e0]'), '0'],
   ['decimal with scale 2', formatValue(dec('-12345'), 'Decimal[18e+2]'), '-123.45'],
   ['small decimal with scale 3', formatValue(dec('5'), 'Decimal[18e+3]'), '0.005'],
   ['BIGINT', formatValue(12345678901234567890n, 'Int64'), '12345678901234567890'],

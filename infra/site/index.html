@@ -110,17 +110,20 @@ function formatValue(v, type = "") {
     return new Date(ms).toISOString().replace("T", " ").replace("Z", "");
   }
   if (typeof v === "bigint") return v.toString();
+  if (/^Decimal/.test(type)) {
+    // HUGEINT sums and DECIMALs arrive as Arrow DecimalBigNum objects. String(v) gives the unscaled digits;
+    // toJSON() would give them wrapped in quote characters (checked against apache-arrow 17).
+    const s = String(v), m = /^Decimal\[\d+e\+?(\d+)\]/.exec(type);
+    const scale = m ? Number(m[1]) : 0;
+    if (scale > 0 && /^-?\d+$/.test(s)) {
+      const neg = s.startsWith("-"), digits = (neg ? s.slice(1) : s).padStart(scale + 1, "0");
+      return (neg ? "-" : "") + digits.slice(0, -scale) + "." + digits.slice(-scale);
+    }
+    return s;
+  }
   if (typeof v === "object") {
     const j = typeof v.toJSON === "function" ? v.toJSON() : v;
-    if (typeof j === "string") {
-      const m = /^Decimal\[\d+e\+?(\d+)\]/.exec(type);            // e.g. Decimal[38e+2]: insert the decimal point
-      const scale = m ? Number(m[1]) : 0;
-      if (scale > 0 && /^-?\d+$/.test(j)) {
-        const neg = j.startsWith("-"), digits = (neg ? j.slice(1) : j).padStart(scale + 1, "0");
-        return (neg ? "-" : "") + digits.slice(0, -scale) + "." + digits.slice(-scale);
-      }
-      return j;
-    }
+    if (typeof j === "string") return j.replace(/^"(.*)"$/, "$1");
     return JSON.stringify(j, (k, x) => typeof x === "bigint" ? x.toString() : x);
   }
   return String(v);
