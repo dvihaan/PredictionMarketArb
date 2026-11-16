@@ -55,10 +55,18 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
 - [ ] 3.4 Option to compare returns against a capital-cost hurdle (Treasury-bill rate)
 - [ ] 3.5 Check that the ported analyzers on migrated data match the original output
 
-## Stage 4 — Pair-matching helper (local)
-- [ ] 4.1 `match.py`: pull open markets (excluding sports, intraday crypto, weather) and fuzzy-match titles and dates
-- [ ] 4.2 `candidates.csv` with both venues' rules text side by side for Vihaan's review
-- [ ] 4.3 Workflow for adding approved pairs to `pairs.json` (watchlist successor)
+## Stage 4 — Pair discovery & maintenance (expanded 2026-11-16 at Binoy's request)
+Goal: a **separate agent** that periodically compares Kalshi and Polymarket and uses agentic exploration to find newly active cross-venue pairs and detect pairs that should be dropped, so the watched list stays current. The recorder already reloads the pairs list, so it follows the agent's updates.
+- [ ] 4.0 Design questions to ask Binoy before building:
+  - Autonomy: may the agent add pairs on its own, or only propose them for human approval? (Vihaan's rule-equivalence check is what makes a pair a real hedge.) Can it drop pairs automatically?
+  - Where and how often it runs: locally, or on AWS on a schedule (e.g., EventBridge → Lambda/ECS task, or a timer on the existing EC2)?
+  - Model and cost: which Claude model; monthly budget for API calls; where the Anthropic API key is stored (SSM)
+  - Output: PR or commit to `pairs.json`, an S3 `ref/pairs/` version, an email summary, or a combination
+  - Scope: categories (sports excluded for now), minimum liquidity or volume
+- [ ] 4.1 Deterministic candidate generation (`match.py`): pull open markets on both venues (excluding sports, intraday crypto, weather) and fuzzy-match titles and dates
+- [ ] 4.2 Agent step: compare both venues' rules text for candidates and judge equivalence, with reasoning and a confidence level
+- [ ] 4.3 Drop detection: closed or settled markets, pairs whose rules changed, pairs that went illiquid
+- [ ] 4.4 Publish a new `pairs.json` version (`valid_from`/`valid_to`) through the approval flow chosen in 4.0
 
 ## Stage 5 — Infrastructure (CloudFormation)
 - [ ] 5.1 `infra/stack.yaml`:
@@ -100,6 +108,12 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
 | 2026-11-15 | Analysis: Athena + Glue; port Vihaan's analyzers | Binoy |
 | 2026-11-15 | Replace the AgentMail digest with CloudWatch alarms → SNS email | Binoy |
 | 2026-11-15 | Kalshi key: Binoy's own RSA key pair, created read-only on the website (private key never leaves his machine) | Binoy |
+| 2026-11-16 | Recorder runs as one Python process with independent per-venue connection tasks that reconnect on their own | Binoy |
+| 2026-11-16 | Polymarket gap check: compare against REST books every **120 s** (configurable); on mismatch, log it and re-subscribe for a fresh snapshot | Binoy |
+| 2026-11-16 | Server runtime: Python 3.12 from the Amazon Linux 2023 repo; develop and test locally on 3.12 | Binoy |
+| 2026-11-16 | Polymarket: subscribe to **both** YES and NO tokens and keep both books as sent | Binoy |
+| 2026-11-16 | The number of watched pairs comes from the pairs file and isn't hard-coded; it changes on reload | Binoy |
+| 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions
 1. **Recorded data is in git.** `data/books.sqlite` (86 MB) and its `-wal`/`-shm` files are committed. GitHub warns on files over 50 MB and blocks files over 100 MB. Proposal: stop tracking `data/` on this branch (`git rm --cached` + `.gitignore`) after migrating to S3. Purging it from git history is a destructive rewrite; Binoy and Vihaan decide.
