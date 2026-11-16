@@ -209,7 +209,13 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
   - [x] One-off partial processing of 2026-11-16 on the instance: 12 s, peak RSS ~256 MB, 7,033 Kalshi + 62,733 Polymarket book rows, manifest written. NightlyOK was not sent; tonight's run overwrites this with the full day.
   - [x] Athena via `/api`: books by venue/date/source over legacy + live data, scanning 3.3 KB. Unquoted `date` works.
   - [x] `tools/query.py` against the real address over HTTPS (no AWS credentials): live rows seconds old
-  - [ ] **Browser query page (DuckDB-WASM):** not testable from here; Binoy/Vihaan to try in a browser
+  - [~] **Browser query page (DuckDB-WASM):** Binoy ran it (2026-11-16). Row counts matched Athena, but two display bugs showed up:
+    - DATE shown as epoch ms
+    - HUGEINT `sum()` shown as `"""\""0\"""""` in the CSV
+    - Also, the default 7-day range hid Nov 9
+    - Fixed in `db2b60d`: per-column Arrow-type formatting (date, timestamp, decimal, BigInt, lists) and an all-dates default, with a Node regression test
+    - Binoy uploaded the new `index.html`. Live copy verified byte-identical through CloudFront; the same query via DuckDB over the live address returns the Athena result exactly.
+    - [ ] Binoy to confirm visually in the browser
   - [ ] Check the first nightly run (2026-11-17 00:31 UTC): success, NightlyOK clears the alarm, and peak memory on a full day (~30× today's partial run)
 - [ ] 6.4 Stop the service; confirm the alarm email arrives (after both subscriptions are confirmed)
 - [ ] 6.5 Activate cost-allocation tags in Billing (manual); check Cost Explorer after 24 h. `Project` is already active; `environment` and `owner` are optional.
