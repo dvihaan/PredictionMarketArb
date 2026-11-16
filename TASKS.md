@@ -219,7 +219,7 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
     - Also, the default 7-day range hid Nov 9
     - Fixed in `db2b60d`: per-column Arrow-type formatting (date, timestamp, decimal, BigInt, lists) and an all-dates default, with a Node regression test
     - Binoy uploaded the new `index.html`. Live copy verified byte-identical through CloudFront; the same query via DuckDB over the live address returns the Athena result exactly.
-    - [ ] Binoy to confirm visually in the browser
+    - [x] Binoy uploaded the quote fix (`f54d2f8`) too
   - [ ] Check the first nightly run (2026-11-17 00:31 UTC): success, NightlyOK clears the alarm, and peak memory on a full day (~30× today's partial run)
 - [~] 6.6 **3-hourly refresh of today's tables** (Binoy, 2026-11-16). Until now, clean tables were rebuilt only nightly, so they lagged up to ~24.5 h.
   - `recorder.compact --today` rebuilds today's books, trades and coverage plus the manifest
@@ -227,7 +227,7 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
   - `pma-refresh.timer` runs at 03,06,09,12,15,18,21:15 UTC (00:xx is left to the nightly job at 00:31) and sends no NightlyOK. Both jobs take `flock /opt/pma/data/compact.lock`, so they never overlap.
   - Cost: each refresh reprocesses today from midnight, ~5–7 min for a full day (estimate), within the nano's CPU allowance at this frequency
   - [x] Pushed (`001cd9e`, auto-synced); Binoy ran `infra/update.sh`. Server on `001cd9e`; recorder restarted 22:01:18 UTC (few-second gap). Timers: nightly 00:30 UTC, refresh 03:15 UTC; `systemd-analyze` confirms the calendar expression.
-  - [ ] Delete the mid-day checkpoint `curated/_state/books/date=2026-11-16.json` left by the earlier one-off run (written before this rule existed), so a failed nightly run can't pick it up
+  - [x] Binoy deleted the mid-day checkpoint `curated/_state/books/date=2026-11-16.json` left by the earlier one-off run (verified: checkpoint folder empty; today's tables intact). Tonight's nightly run writes the correct one.
   - [x] Ran `pma-refresh` once by hand (22:05 UTC): success.
     - 2026-11-16 so far: Kalshi 31,929 and Polymarket 285,853 book rows; 53 s wall and 39 CPU-s for ~2.4 h of data
     - "day in progress: end-of-day books not saved", as designed
