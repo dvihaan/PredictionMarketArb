@@ -25,7 +25,9 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
 - [~] 1.0 Kalshi API key from Binoy's account
   - [x] Read-only key created on kalshi.com with Binoy's own RSA public key (`dbinoy-api-key`, Key ID `b496ed3a-…21da`, 2026-11-15). Private key stays at `~/.kalshi/kalshi_private.pem`. The website offers a read-only option, so the scope-reduction script isn't needed.
   - [ ] Check that a signed read request and the WebSocket handshake work despite the "Verify your location" notice, from the Mac and later from AWS us-east-1
-  - [ ] Store the Key ID and private key in SSM Parameter Store (SecureString) at deploy time (Stage 6)
+  - [x] Stored in SSM Parameter Store by Binoy (2026-11-15): `/prediction-market-arb/kalshi/key-id` and `/prediction-market-arb/kalshi/private-key`. Both are Standard tier SecureStrings in us-east-1, encrypted with `alias/aws/ssm`. Checked: the key ID is a UUID; the private key is a complete PKCS#8 PEM with a trailing newline, so the recorder must strip whitespace when loading it.
+  - [?] Both parameters are tagged only `project=prediction-market-arb`; `environment=dev` and `owner=binoy` are missing
+  - [ ] Stage 5 IAM role: allow `ssm:GetParameter` on `/prediction-market-arb/kalshi/*` (decrypting with the AWS-managed key needs no extra KMS grant)
 - [ ] 1.2 `recorder/books.py`: rebuild books from snapshots and deltas, top 25 levels; resync on a seq gap. Unit tests.
 - [ ] 1.3 `recorder/poly_ws.py`, `recorder/kalshi_ws.py`: connect, subscribe, reconnect with backoff, heartbeat
 - [ ] 1.4 `recorder/sink.py`: gzip JSONL raw files rotated every 5 min; upload to S3 (or a local dir in dev)
