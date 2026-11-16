@@ -233,7 +233,17 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
     - "day in progress: end-of-day books not saved", as designed
     - Extrapolation: ~6–7 min for a full day; ~30 CPU-min/day for 7 refreshes plus the nightly run, against ~144 CPU-min/day of t4g.nano baseline
     - Memory peak isn't reported by systemd for this unit; check during the nightly run
-- [ ] 6.4 Stop the service; confirm the alarm email arrives (after both subscriptions are confirmed)
+- [~] 6.4 Alarm test by stopping the recorder (Binoy chose the real outage test, 2026-11-16)
+  - Recorder stopped 22:11:39 UTC (clean SIGINT: files closed and uploaded) and restarted early at 22:30:03 → **order-book gap 18 min 24 s**, recorded in coverage. Trades backfill from the watermarks.
+  - Heartbeats stopped exactly at 22:11 UTC, as intended
+  - **Finding: `recorder-down` did NOT fire within 18 min**; no email
+    - Cause (documented by AWS): while ≥ EvaluationPeriods real datapoints remain in the alarm's look-back "evaluation range", CloudWatch evaluates those and *ignores* TreatMissingData=breaching. The size of that range isn't published, so heartbeat detection is late by an unknown amount.
+    - `nightly-job-missing` has the same flaw once it has had a datapoint
+  - [ ] Fix (proposed, awaiting Binoy's OK to test). Candidates:
+    - (a) metric math `FILL(m1, 0)` with 1-min periods and 10 of 10
+    - (b) 1-min periods only
+    - Test both on a temporary alarm with a dummy metric (no recorder outage), adopt the reliable one for both alarms, delete the test resources
+  - [ ] Re-verify after the fix (method to be agreed; the dummy-metric test may be enough)
 - [ ] 6.5 Activate cost-allocation tags in Billing (manual); check Cost Explorer after 24 h. `Project` is already active; `environment` and `owner` are optional.
 
 ## Stage 7 — Docs
