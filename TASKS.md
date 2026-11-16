@@ -19,9 +19,15 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
 - [x] Commit setup on the branch
 
 ## Stage 1 — Recorder rewrite (WebSocket)
-- [ ] 1.1 Confirm the WebSocket message formats against live endpoints and save sample messages as test fixtures
-  - [ ] Polymarket market channel: `book`, `price_change`, `last_trade_price`, `tick_size_change`; per-connection asset limit
-  - [ ] Kalshi: handshake signing (Ed25519), `orderbook_snapshot`/`orderbook_delta` seq semantics, `trade` channel; per-subscription market limit (needs key, Stage 1.0)
+- [x] 1.1 Confirm the WebSocket message formats against live endpoints and save sample messages as test fixtures (`tools/probe_ws.py`, run 2026-11-16 from Binoy's Mac)
+  - [x] Kalshi auth: RSA-PSS signing works. A signed REST GET returned HTTP 200 and the WS handshake was accepted at `wss://external-api-ws.kalshi.com/trade-api/ws/v2`. The "verify location" notice does not block market data (from the Mac; re-check from AWS in Stage 6).
+  - [x] Kalshi `orderbook_snapshot`/`orderbook_delta`: `*_dollars_fp` string pairs and signed `delta_fp`; `seq` contiguous per `sid`; `clock` and `ts_ms` present. WS snapshots matched REST top-3 levels on every book side but one (the book moved between the two calls).
+  - [x] Kalshi clock: `sending_ts_ms` is about 20 ms ahead of the Mac's clock → store server timestamps next to `recv_ms`; on EC2, rely on Amazon Time Sync.
+  - [x] Polymarket: the initial `book` dump arrives as a JSON **list** in one frame; later events are single objects. `book` carries `bids`/`asks` sorted worst-first, plus `hash`, `tick_size` and `last_trade_price`. Every `price_change` carries **two entries, YES and its mirrored NO**. Text `PING`/`PONG` heartbeat works. No sequence numbers, so gaps can't be detected from the feed.
+  - [x] Polymarket NO book = exact mirror of YES (best YES ask = 1 − best NO bid on all 3 pairs).
+  - [ ] Kalshi `trade` message not observed yet (no trades in 60 s); capture one during the Stage 1 smoke tests
+  - Fixtures: `tests/fixtures/kalshi_ws_sample.jsonl`, `tests/fixtures/poly_ws_sample.jsonl`
+  - Neither venue's per-connection limit matters at 57 pairs (Kalshi documents 500,000 markets per subscription; Polymarket documents no limit).
 - [~] 1.0 Kalshi API key from Binoy's account
   - [x] Read-only key created on kalshi.com with Binoy's own RSA public key (`dbinoy-api-key`, Key ID `b496ed3a-…21da`, 2026-11-15). Private key stays at `~/.kalshi/kalshi_private.pem`. The website offers a read-only option, so the scope-reduction script isn't needed.
   - [ ] Check that a signed read request and the WebSocket handshake work despite the "Verify your location" notice, from the Mac and later from AWS us-east-1
