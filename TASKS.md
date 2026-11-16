@@ -181,11 +181,19 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 - [x] 5.9 Binoy approved the push (2026-11-16): `arch-redesign` pushed to GitHub at `138a500` after a scan for secrets and personal data (clean). Binoy runs `infra/deploy.sh` himself.
 
 ## Stage 6 — Deploy & verify
-- [ ] 6.1 `infra/deploy.sh` (package code → S3 → `cloudformation deploy` → SSM restart), `infra/teardown.sh`
-- [ ] 6.2 Local smoke test: recorder runs 10 min; rebuilt books match REST snapshots
-- [ ] 6.3 Deploy to dev; data lands in S3 within 5 min; Athena counts work
-- [ ] 6.4 Stop the service; confirm the alarm email arrives
-- [ ] 6.5 Activate cost-allocation tags in Billing (manual); check Cost Explorer after 24 h
+- [x] 6.1 `infra/deploy.sh` (password → `cloudformation deploy` → upload pages) and `infra/update.sh` (SSM → `pma-update`). The planned `infra/teardown.sh` is not written yet.
+- [x] 6.2 Local smoke tests done in Stage 1: live runs on the Mac; Kalshi rebuilt books matched REST; Polymarket mismatches caught and repaired
+- [~] 6.3 First deploy (Binoy ran `deploy.sh`, 2026-11-16 19:11 UTC): stack `prediction-market-arb` **CREATE_COMPLETE** in us-east-2 with no failures. The budget deployed fine from us-east-2.
+  - Outputs: web `https://d2wfqni2tgigmk.cloudfront.net`, bucket `prediction-market-arb-<account>-us-east-2`, instance `i-0f34f7009abfee82f`, workgroup `prediction-market-arb`, database `prediction_market_arb`
+  - **Bug: server self-install failed.** On the t4g.nano (412 MB usable), `dnf install git` in UserData was OOM-killed ("Killed"). Swap was only created later, in setup.sh, so the boot script stopped before the clone and nothing was installed.
+    - Fix: UserData creates 1 GB of swap before any `dnf`; setup.sh's swap step skips if it exists
+    - Changing UserData creates a new launch template version, so the next deploy **replaces the instance** (the failed one holds no data)
+  - [ ] Push the fix; Binoy re-runs `deploy.sh`; confirm the new instance sets itself up and the recorder runs
+  - [ ] Kalshi accepts the key from AWS; raw files land in S3 within 5 min; alarms are clear
+  - [ ] Login page, password, query page (browser DuckDB), `/api` Athena query, and Athena console counts
+  - [ ] Run `tools/migrate_sqlite.py` against the bucket; rebuild the manifest
+- [ ] 6.4 Stop the service; confirm the alarm email arrives (after both subscriptions are confirmed)
+- [ ] 6.5 Activate cost-allocation tags in Billing (manual); check Cost Explorer after 24 h. `Project` is already active; `environment` and `owner` are optional.
 
 ## Stage 7 — Docs
 - [ ] 7.1 Rewrite README: architecture, Kalshi key setup, deploy, querying (Athena + DuckDB), cost, teardown
