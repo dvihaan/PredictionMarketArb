@@ -22,6 +22,7 @@ sys.path.insert(0, ROOT)          # lets "python recorder/main.py" find the reco
 from recorder import pairs as pairs_mod  # noqa: E402
 from recorder.auth import KalshiKey  # noqa: E402
 from recorder.kalshi_ws import KalshiFeed  # noqa: E402
+from recorder.metrics import Metrics  # noqa: E402
 from recorder.poly_ws import PolyFeed  # noqa: E402
 from recorder.sink import RawSink, S3Uploader  # noqa: E402
 from recorder.trades import TradePoller  # noqa: E402
@@ -56,6 +57,7 @@ def parse_args(argv=None):
                     help="how far back to fetch trades when no trade state exists (default 24)")
     ap.add_argument("--upload-interval", type=float, default=60, help="seconds between upload passes (default 60)")
     ap.add_argument("--status-interval", type=float, default=60, help="seconds between status lines (default 60)")
+    ap.add_argument("--metrics-namespace", help="send heartbeat metrics to CloudWatch under this namespace (default: off)")
     ap.add_argument("--duration", type=float, default=0, help="stop after this many seconds (default: run until stopped)")
     args = ap.parse_args(argv)
     if args.kalshi_key_file and not args.kalshi_key_id:
@@ -139,17 +141,27 @@ async def run(args):
         sink.rotate_due()
 
     uploader = S3Uploader(args.out, args.s3_bucket, args.s3_prefix, args.region) if args.s3_bucket else None
+    upload_failures = [0]
 
     async def upload():
         ok, failed = await asyncio.to_thread(uploader.upload_pending)
+        upload_failures[0] += failed
         if failed:
             log(f"upload: {ok} files uploaded, {failed} failed (will retry)")
+
+    metrics = Metrics(args.metrics_namespace, args.region) if args.metrics_namespace else None
 
     async def status():
         k = (f"kalshi msgs={kalshi.messages} books={len(kalshi.books)}/{len(kalshi.tickers - kalshi.closed)} "
              f"resyncs={kalshi.resyncs} closed={len(kalshi.closed)} ") if kalshi else ""
         log(f"status: {k}poly msgs={poly.messages} books={len(poly.books)}/{len(poly.tokens - poly.closed)} "
             f"mismatches={poly.mismatches} closed={len(poly.closed)} trades={trade_count[0]}")
+        if metrics:
+            totals = {"PolyMessages": poly.messages, "PolyMismatches": poly.mismatches,
+                      "UploadFailures": upload_failures[0]}
+            if kalshi:
+                totals["KalshiMessages"] = kalshi.messages
+            await asyncio.to_thread(metrics.report, totals)
 
     tasks += [asyncio.ensure_future(every(stop, 5, rotate)),
               asyncio.ensure_future(every(stop, args.pairs_reload, reload_pairs)),

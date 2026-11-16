@@ -357,6 +357,25 @@ def process_day(store, d, log=print, depth=0):
         f"{n_cov} coverage events, trades written {n_trades}, {time.monotonic() - started:.0f} s")
 
 
+MANIFEST_KEY = "curated/manifest.json"
+
+
+def write_manifest(store):
+    """Index of the curated and reference files, so tools reading over HTTPS can find them without
+    listing the bucket. {"generated_ms", "tables": {"books": [{"key", "venue", "date", "bytes"}], ...}}."""
+    tables = defaultdict(list)
+    for key in store.list("curated/"):
+        if key.startswith("curated/_state/") or not key.endswith(".parquet"):
+            continue
+        table = key.split("/")[1]
+        parts = dict(p.split("=", 1) for p in key.split("/")[2:-1] if "=" in p)
+        tables[table].append({"key": key, **parts})
+    tables["ref"] = [{"key": k} for k in store.list("ref/")]
+    body = {"generated_ms": int(time.time() * 1000), "tables": dict(tables)}
+    store.write(MANIFEST_KEY, json.dumps(body, indent=1).encode())
+    return {t: len(v) for t, v in tables.items()}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--store", required=True, help="local directory or s3://bucket[/prefix] holding raw/")
@@ -364,7 +383,12 @@ def main(argv=None):
     ap.add_argument("--days", type=int, default=1, help="process this many days ending at --date (default 1)")
     ap.add_argument("--region", default="us-east-1")
     ap.add_argument("--pairs", help="pairs file (path or s3://); if given, also snapshot today's reference data")
+    ap.add_argument("--metrics-namespace", help="report NightlyOK=1 to CloudWatch after a successful run")
+    ap.add_argument("--manifest-only", action="store_true", help="only rebuild curated/manifest.json")
     args = ap.parse_args(argv)
+    if args.manifest_only:
+        print(f"manifest: {write_manifest(open_store(args.store, args.region))}", flush=True)
+        return 0
     end = Date.fromisoformat(args.date) if args.date else datetime.now(timezone.utc).date() - timedelta(days=1)
     store = open_store(args.store, args.region)
     if args.pairs:
@@ -379,6 +403,11 @@ def main(argv=None):
             print(f"{d}: no raw data; skipped", flush=True)
             continue
         process_day(store, d, log=lambda s: print(s, flush=True))
+    print(f"manifest: {write_manifest(store)}", flush=True)
+    if args.metrics_namespace:
+        from recorder.metrics import Metrics
+        Metrics(args.metrics_namespace, args.region).put({"NightlyOK": 1})
+    return 0
 
 
 if __name__ == "__main__":

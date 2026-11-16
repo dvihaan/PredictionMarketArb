@@ -228,6 +228,22 @@ class CompactTest(unittest.TestCase):
             else:
                 self.assertEqual(first[k], second[k], k)
 
+    def test_manifest_lists_curated_and_ref_files(self):
+        from recorder.compact import MANIFEST_KEY, write_manifest
+        r = self.raw
+        r.kalshi(T1 + 1000, **snap("K", [(0.40, 10)]))
+        r.close()
+        self.run_day(D1)
+        self.store.write("ref/pairs/date=2026-11-16/pairs.json", b"{}")
+        counts = write_manifest(self.store)
+        m = json.loads(self.store.read(MANIFEST_KEY))
+        books = m["tables"]["books"]
+        self.assertIn({"key": f"curated/books/venue=kalshi/date={D1}/part-0.parquet", "venue": "kalshi",
+                       "date": D1}, books)
+        self.assertNotIn("_state", json.dumps(m))
+        self.assertEqual(m["tables"]["ref"], [{"key": "ref/pairs/date=2026-11-16/pairs.json"}])
+        self.assertEqual(counts["coverage"], 1)
+
     def test_coverage_detail_is_json(self):
         r = self.raw
         r.cov(T1 + 1, "poly", "book_mismatch", tokens=["Y"])
