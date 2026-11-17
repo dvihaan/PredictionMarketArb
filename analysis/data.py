@@ -165,6 +165,16 @@ class Data:
         self.from_date, self.to_date = from_date, to_date
         self.manifest = source.manifest()
         self.con = duckdb.connect()
+        # Optional cap on DuckDB's memory (e.g. PMA_DUCKDB_MEMORY=200MB on the 0.5 GB server): sorts then
+        # spill to a temporary folder instead of growing in memory.
+        limit = os.environ.get("PMA_DUCKDB_MEMORY")
+        if limit:
+            spill = os.path.join(getattr(source, "cache_dir", None) or DEFAULT_CACHE, "duckdb_tmp")
+            os.makedirs(spill, exist_ok=True)
+            self.con.execute(f"SET memory_limit = {_sql_str(limit)}")
+            self.con.execute(f"SET temp_directory = {_sql_str(spill)}")
+            self.con.execute(f"SET threads = {int(os.environ.get('PMA_DUCKDB_THREADS', '2'))}")
+            self.con.execute("SET preserve_insertion_order = false")
         self.tables = {}
         for table, entries in sorted(self.manifest["tables"].items()):
             if table == "ref":
@@ -176,6 +186,21 @@ class Data:
             self.con.execute(f"CREATE VIEW {table} AS SELECT * FROM read_parquet([{paths}], "
                              "hive_partitioning = true, union_by_name = true)")
             self.tables[table] = len(files)
+
+    # ---- files ----
+
+    def dates(self, table="books"):
+        """Dates (YYYY-MM-DD) that have files for a table, within the range."""
+        return sorted({e["date"] for e in self.manifest["tables"].get(table, [])
+                       if "date" in e and _in_range(e, self.from_date, self.to_date)})
+
+    def files(self, table, d, **parts):
+        """[(manifest entry, local path)] for one table and date, optionally filtered by partition (e.g. venue)."""
+        out = []
+        for e in self.manifest["tables"].get(table, []):
+            if e.get("date") == d and all(e.get(k) == v for k, v in parts.items()):
+                out.append((e, self.source.path(e)))
+        return out
 
     # ---- reference data ----
 

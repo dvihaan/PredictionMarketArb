@@ -154,9 +154,19 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
   - `tools/query.py` is now a thin wrapper (`--source`, `--cache`) and reports cache downloads
   - Tests: `tests/test_data.py`, 8 tests (local views and dates, pairs/T-bill fallbacks, a real HTTP server with password: first run downloads, second downloads nothing, a changed file is re-fetched alone, range limits downloads, wrong password fails)
   - Live: first run 32 files / 31 MB / 8.3 s; second run 0 downloads / 0.5 s. Live data shows `suspect_levels` (Nov 16: 5,626 rows; Nov 17: 6,143; 0 whole-book); legacy files without the column read fine (`union_by_name`).
-- [ ] 3.C `analysis/replay.py` + `analysis/episodes.py`
-  - port of `analyze_stream.py` with `uncertain`, excess return over T-bill and latency sensitivity (50 ms / 250 ms / 1 s / 5 s)
-  - **gate: reproduce Vihaan's `episodes.csv`** on the migrated Nov 9–12 data
+- [x] 3.C `analysis/replay.py` + `analysis/episodes.py` + `analysis/run.py` (`python -m analysis.run episodes`)
+  - Legacy days: one evaluation per polling cycle, exactly as the original. Live days: one evaluation per distinct receive time; rows sharing a ms are applied together, in file order.
+  - New columns: `uncertain` (peak walk used a marked level) and `uncertain_any`, `tbill_pct`, `excess_annualized_pct`, and `profit/size_{50,250,1000,5000}ms` (books as they stood L ms after the start; unknown if data ended or coverage was lost first)
+  - Live coverage: recorder stopped→started is a gap; started without a stop means a crash (gap from the last data); a venue disconnect ends episodes; market_closed ends that pair's episodes
+  - **GATE PASSED: Vihaan's `episodes.csv` reproduced exactly.** 157/157 episodes identical in all 17 original columns, same order (times exact, not just within one cycle). It's a permanent test (`tests/test_episodes.py::LegacyReproductionTest`).
+  - Live Nov 16–17 (8.5 h): 352 episodes; 21 beat the T-bill; 240 still profitable 1 s after start; 0 uncertain at the peak, 8 uncertain at some point (consistent with only 33 of ~8,000 marked levels being at the best price)
+  - Bug found and fixed: gap accounting lost clean stop→start gaps (now 2 gaps / 1,180 s, as expected)
+  - 9 tests: 8 live rules on synthetic data + the legacy reproduction
+  - **Memory:** ~0.9–1.0 GB peak on the Mac for 8.5 h of live data
+    - Tried and rejected: DuckDB memory caps (it can't sort nested books within 256 MB)
+    - Replaced the full sort with a streaming reorder that holds only `max_lateness` ms of rows: identical results, kept, but **peak memory unchanged (~1 GB)** → the sort wasn't the cause
+    - Binoy's call (2026-11-17): stop optimizing; move to **t4g.micro (1 GB)**; measure the real peak on the server in 3.G and revisit only if it doesn't fit
+- [ ] 3.C.1 Instance → t4g.micro without rebuilding the server: put `InstanceType` on the instance resource (stop/start, disk kept) rather than in the launch template (replacement, ~18 min reinstall). Preview with a change set first. Deploy the raw-file overwrite fix (`408f712`) **before** the resize, since the resize restarts the recorder.
 - [ ] 3.D Legacy maker mode (`maker.py` unchanged) — **gate: reproduce `maker_fills.csv`**
 - [ ] 3.E `analysis/maker_live.py`: queue tracking (`--cancel-model pessimistic|pro-rata`), hedge latency, markouts (1/10/60 s), position caps, Polymarket maker rebates (per-pair `poly_maker_rebate_share`)
 - [ ] 3.F `analysis/research.py`: `gaps` (per pair per changed second), `leadlag`, `stale`
@@ -297,6 +307,11 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
   - [x] Binoy ran `deploy.sh` → UPDATE_COMPLETE 02:49 UTC (2026-11-17). Both alarms verified in AWS: metric math `FILL(m1, 0)`, 60 s × 10 and 3600 s × 26.
   - [x] `infra/ops.sh test-alarm`: recorder-down went ALARM at 02:52:07 and OK at 02:52:49 UTC. **Binoy confirmed the email arrived.** Detection timing is covered by the dummy-metric experiment (identical design); a second real outage is optional, at a quiet time.
   - [ ] Re-verify after the fix (method to be agreed; the dummy-metric test may be enough)
+- [x] 6.8 **Recorder bug: raw-file overwrite on restarts within a 5-minute window** (found in 3.C, 2026-11-17)
+  - Names were `<host>-<window>.jsonl.gz`; a restart in the same window reused the name, and its upload overwrote the previous run's S3 file (no versioning)
+  - Lost ~80 s around the 2026-11-16 22:01 restart and ~60 s around the 2026-11-17 04:05 restart, across all streams
+  - Fix `408f712`: names include the run's start ms (`<host>-<window>-<run>.jsonl.gz`); compaction orders by (window, run); regression tests
+  - [ ] Deploy (push + `infra/update.sh`); must happen before any other restart, including the t4g.micro resize
 - [x] 6.7 `infra/ops.sh` operations helper (Binoy asked how to check and toggle state from the CLI):
   - commands: `status`, `logs [recorder|nightly|refresh] [n]`, `stop|start|restart`, `refresh`, `alarms`, `test-alarm [name]` (set-alarm-state, no outage), `shell` (Session Manager)
   - Read-only commands checked from both bash and zsh. SSM parameters are JSON-encoded via python3, to avoid shell word-splitting differences (the cause of a failed first attempt at the alarm experiment).
@@ -359,6 +374,8 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-17 | Maker sim improved now (new model next to the unchanged maker.py): queue tracking, hedge latency, markouts, caps + rebates | Binoy |
 | 2026-11-17 | Research additions: latency sensitivity, gap time series, lead-lag and stale quotes, daily report page | Binoy |
 | 2026-11-17 | Fees: per-pair rates from the daily pairs file only | Binoy |
+| 2026-11-17 | Deploy 3.A immediately (before the first full-day nightly run) | Binoy |
+| 2026-11-17 | Memory: stop optimizing; upgrade to **t4g.micro** (1 GB, +~$3/mo); measure the real nightly peak in 3.G | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions

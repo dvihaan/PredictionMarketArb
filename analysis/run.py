@@ -1,0 +1,62 @@
+"""Run analyses over the recorded data.
+
+    python -m analysis.run episodes --from 2026-11-16 --to 2026-11-17          # source from PMA_URL/PMA_PASSWORD
+    python -m analysis.run episodes --source data/raw-local --out data/analysis
+    python -m analysis.run episodes --source s3://<bucket> --from 2026-11-09 --to 2026-11-12
+
+Writes <out>/episodes.csv (and .parquet) and prints a summary. Sources: a web address (with PMA_PASSWORD),
+s3://bucket, or a local store directory; remote files are cached locally (see analysis/data.py).
+"""
+import argparse
+import csv
+import os
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+from analysis import episodes  # noqa: E402
+from analysis.data import open_data  # noqa: E402
+
+
+def write_rows(path_base, rows, fieldnames):
+    os.makedirs(os.path.dirname(path_base) or ".", exist_ok=True)
+    with open(path_base + ".csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames)
+        w.writeheader()
+        w.writerows(rows)
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    if rows:
+        pq.write_table(pa.Table.from_pylist(rows), path_base + ".parquet", compression="zstd")
+
+
+def cmd_episodes(args):
+    data = open_data(args.source, None, args.from_date, args.to_date, args.cache)
+    rows, run = episodes.run_episodes(data, args.from_date, args.to_date, args.max_gap,
+                                      log=lambda s: print(s, file=sys.stderr, flush=True))
+    base = os.path.join(args.out, "episodes")
+    write_rows(base, rows, episodes.fields())
+    print("\n".join(episodes.summary(rows, run)))
+    print(f"\nWritten to {base}.csv")
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="command", required=True)
+    e = sub.add_parser("episodes", help="taker-on-both-legs episodes (port of analyze_stream.py)")
+    for p in (e,):
+        p.add_argument("--source", help="web address, s3://bucket or local store (default: PMA_URL)")
+        p.add_argument("--from", dest="from_date", help="first date, YYYY-MM-DD")
+        p.add_argument("--to", dest="to_date", help="last date, YYYY-MM-DD")
+        p.add_argument("--out", default=os.path.join(ROOT, "data", "analysis"), help="output folder")
+        p.add_argument("--cache", help="cache folder for downloaded files")
+    e.add_argument("--max-gap", type=float, default=30,
+                   help="legacy data: a longer gap between polling cycles counts as lost coverage (seconds)")
+    args = ap.parse_args(argv)
+    {"episodes": cmd_episodes}[args.command](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
