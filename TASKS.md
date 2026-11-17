@@ -167,6 +167,9 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
     - Replaced the full sort with a streaming reorder that holds only `max_lateness` ms of rows: identical results, kept, but **peak memory unchanged (~1 GB)** → the sort wasn't the cause
     - Binoy's call (2026-11-17): stop optimizing; move to **t4g.micro (1 GB)**; measure the real peak on the server in 3.G and revisit only if it doesn't fit
 - [~] 3.C.1 Template ready (`InstanceType` default `t4g.micro` on `RecorderInstance`; launch template pinned to `t4g.nano` literally). **Change-set preview (2026-11-17):** LaunchTemplate *not* changed; `RecorderInstance` Modify (InstanceType; 'Conditional' = stop/start for EBS-backed); `InstanceRecoveryAlarm` dimensions refreshed. Preview deleted. Originally: put `InstanceType` on the instance resource (stop/start, disk kept) rather than in the launch template (replacement, ~18 min reinstall). Preview with a change set first. Deploy the raw-file overwrite fix (`408f712`) **before** the resize, since the resize restarts the recorder.
+  - First `deploy.sh` (2026-11-17 ~15:58 UTC): stack UPDATE_COMPLETE, but **the instance stayed t4g.nano**. `cloudformation deploy` keeps the *stored* value of parameters not passed (InstanceType was stored as t4g.nano), and the new `InstanceType` property still caused a stop/start (~16 s recording gap, no benefit).
+  - Fix: `deploy.sh` now passes `InstanceType` (env `INSTANCE_TYPE`, default t4g.micro) and documents the stored-parameter behaviour. Second change-set preview: RecorderInstance Modify (stop/start), launch template untouched.
+  - [ ] Binoy re-runs `deploy.sh`; confirm t4g.micro, recorder back, gap length
 - [ ] 3.D Legacy maker mode (`maker.py` unchanged) — **gate: reproduce `maker_fills.csv`**
 - [ ] 3.E `analysis/maker_live.py`: queue tracking (`--cancel-model pessimistic|pro-rata`), hedge latency, markouts (1/10/60 s), position caps, Polymarket maker rebates (per-pair `poly_maker_rebate_share`)
 - [ ] 3.F `analysis/research.py`: `gaps` (per pair per changed second), `leadlag`, `stale`
@@ -311,7 +314,8 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
   - Names were `<host>-<window>.jsonl.gz`; a restart in the same window reused the name, and its upload overwrote the previous run's S3 file (no versioning)
   - Lost ~80 s around the 2026-11-16 22:01 restart and ~60 s around the 2026-11-17 04:05 restart, across all streams
   - Fix `408f712`: names include the run's start ms (`<host>-<window>-<run>.jsonl.gz`); compaction orders by (window, run); regression tests
-  - [ ] Deploy (push + `infra/update.sh`); must happen before any other restart, including the t4g.micro resize
+  - [x] Deployed 2026-11-17: Binoy pushed and ran `infra/update.sh` (server on `286be0e`)
+    - **Verified in production:** the 15:55 UTC window holds separate files for the old-code run (stopped 15:57:24) and the new-code run (stopped 15:58:34); a third run started 15:58:50 with its own name → no overwrite across two restarts in one window
 - [x] 6.7 `infra/ops.sh` operations helper (Binoy asked how to check and toggle state from the CLI):
   - commands: `status`, `logs [recorder|nightly|refresh] [n]`, `stop|start|restart`, `refresh`, `alarms`, `test-alarm [name]` (set-alarm-state, no outage), `shell` (Session Manager)
   - Read-only commands checked from both bash and zsh. SSM parameters are JSON-encoded via python3, to avoid shell word-splitting differences (the cause of a failed first attempt at the alarm experiment).

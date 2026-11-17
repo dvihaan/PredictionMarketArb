@@ -4,7 +4,10 @@
 #   ALERT_EMAILS="first@example.com,second@example.com" infra/deploy.sh
 #
 # Optional environment: BRANCH (default arch-redesign), REGION (default us-east-2), STACK (default
-# prediction-market-arb). Needs the AWS CLI with credentials for the target account.
+# prediction-market-arb), INSTANCE_TYPE (default t4g.micro). Needs the AWS CLI with credentials.
+#
+# Note: `cloudformation deploy` keeps the STORED value of any stack parameter not passed below, even if the
+# template's default has changed. Pass every parameter whose value should follow this script.
 #
 # The web password is created once in SSM Parameter Store (/prediction-market-arb/web/password) and
 # never printed or stored in the repository; only its SHA-256 goes to CloudFormation. To read it:
@@ -15,6 +18,7 @@ set -euo pipefail
 REGION="${REGION:-us-east-2}"
 STACK="${STACK:-prediction-market-arb}"
 BRANCH="${BRANCH:-arch-redesign}"
+INSTANCE_TYPE="${INSTANCE_TYPE:-t4g.micro}"
 PW_PARAM=/prediction-market-arb/web/password
 TAGS=(Project=prediction-market-arb environment=dev owner=binoy)
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -39,13 +43,14 @@ fi
 HASH="$(aws ssm get-parameter --region "$REGION" --name "$PW_PARAM" --with-decryption --query Parameter.Value \
         --output text | tr -d '\n' | shasum -a 256 | cut -d' ' -f1)"
 
-echo "== Deploying stack $STACK in $REGION (branch $BRANCH); a first deploy takes about 10 minutes"
+echo "== Deploying stack $STACK in $REGION (branch $BRANCH, instance $INSTANCE_TYPE); a first deploy takes about 10 minutes"
 aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \
   --template-file "$HERE/stack.yaml" \
   --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset \
   --tags "${TAGS[@]}" \
-  --parameter-overrides "AlertEmail1=$EMAIL1" "AlertEmail2=${EMAIL2:-}" "WebPasswordHash=$HASH" "RepoBranch=$BRANCH"
+  --parameter-overrides "AlertEmail1=$EMAIL1" "AlertEmail2=${EMAIL2:-}" "WebPasswordHash=$HASH" "RepoBranch=$BRANCH" \
+    "InstanceType=$INSTANCE_TYPE"
 
 out() { aws cloudformation describe-stacks --region "$REGION" --stack-name "$STACK" \
           --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
