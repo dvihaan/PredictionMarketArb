@@ -220,7 +220,14 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
     - Fixed in `db2b60d`: per-column Arrow-type formatting (date, timestamp, decimal, BigInt, lists) and an all-dates default, with a Node regression test
     - Binoy uploaded the new `index.html`. Live copy verified byte-identical through CloudFront; the same query via DuckDB over the live address returns the Athena result exactly.
     - [x] Binoy uploaded the quote fix (`f54d2f8`) too
-  - [ ] Check the first nightly run (2026-11-17 00:31 UTC): success, NightlyOK clears the alarm, and peak memory on a full day (~30× today's partial run)
+  - [x] First nightly run (2026-11-17 00:31 UTC) succeeded:
+    - processed all of Nov 16 (19:39–24:00): Kalshi 52,521 and Polymarket 447,426 book rows, 206 coverage events, ~5.9k trades
+    - 88 s wall, 66 CPU-s
+    - wrote the end-of-day checkpoint `date=2026-11-16.json`, the Nov 17 reference snapshot (57 + 57 markets, 0 errors) and the manifest
+    - NightlyOK cleared the alarm
+    - memory: 0 OOM kills since boot, swap 36 MB used of 1.4 GB, 178 MB available
+  - [ ] Check the 03:15 UTC refresh (Nov 17): the first day built on a saved checkpoint, with Kalshi books carried over
+  - [ ] Check the first **full-day** nightly run (2026-11-18 00:31 UTC, ~5–6× Nov 16's 4.3 h): duration, swap, OOM. If memory gets tight, have `ParquetOut` write to a temp file instead of an in-memory buffer.
 - [~] 6.6 **3-hourly refresh of today's tables** (Binoy, 2026-11-16). Until now, clean tables were rebuilt only nightly, so they lagged up to ~24.5 h.
   - `recorder.compact --today` rebuilds today's books, trades and coverage plus the manifest
   - Processing today never saves end-of-day books; only a past day does, enforced in `process_day` with a regression test. A mid-day snapshot saved as "end of day" would corrupt the next day if a nightly run failed.
@@ -233,7 +240,7 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
     - "day in progress: end-of-day books not saved", as designed
     - Extrapolation: ~6–7 min for a full day; ~30 CPU-min/day for 7 refreshes plus the nightly run, against ~144 CPU-min/day of t4g.nano baseline
     - Memory peak isn't reported by systemd for this unit; check during the nightly run
-- [~] 6.4 Alarm test by stopping the recorder (Binoy chose the real outage test, 2026-11-16)
+- [x] 6.4 Alarm test by stopping the recorder (Binoy chose the real outage test, 2026-11-16)
   - Recorder stopped 22:11:39 UTC (clean SIGINT: files closed and uploaded) and restarted early at 22:30:03 → **order-book gap 18 min 24 s**, recorded in coverage. Trades backfill from the watermarks.
   - Heartbeats stopped exactly at 22:11 UTC, as intended
   - **Finding: `recorder-down` did NOT fire within 18 min**; no email
@@ -249,7 +256,8 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
     - `recorder-down` uses design A
     - `nightly-job-missing` uses FILL over **hourly** buckets, 26 of 26: it fires only if no success in the last 26 h (calendar-day buckets would fire nightly between midnight and the 00:30 run)
     - Regression tests in `tests/test_infra.py` (AlarmDesignTest)
-  - [ ] Binoy runs `deploy.sh` (alarms only; the instance is not replaced)
+  - [x] Binoy ran `deploy.sh` → UPDATE_COMPLETE 02:49 UTC (2026-11-17). Both alarms verified in AWS: metric math `FILL(m1, 0)`, 60 s × 10 and 3600 s × 26.
+  - [x] `infra/ops.sh test-alarm`: recorder-down went ALARM at 02:52:07 and OK at 02:52:49 UTC. **Binoy confirmed the email arrived.** Detection timing is covered by the dummy-metric experiment (identical design); a second real outage is optional, at a quiet time.
   - [ ] Re-verify after the fix (method to be agreed; the dummy-metric test may be enough)
 - [x] 6.7 `infra/ops.sh` operations helper (Binoy asked how to check and toggle state from the CLI):
   - commands: `status`, `logs [recorder|nightly|refresh] [n]`, `stop|start|restart`, `refresh`, `alarms`, `test-alarm [name]` (set-alarm-state, no outage), `shell` (Session Manager)
