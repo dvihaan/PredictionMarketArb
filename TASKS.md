@@ -121,16 +121,27 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
 - [ ] 2.4 Nightly schedule on EC2: a systemd timer, defined in Stage 5's instance setup
 - Total tests: 61 passing (36 new + Vihaan's 25)
 
-## Stage 3 — Analyzers
-- [ ] 3.0 Design questions to raise with Binoy at the start of Stage 3 (noted 2026-11-16):
-  - **Per-level suspect flag.** Today's 21 Polymarket repairs never touched the best level (0 at level 1, 5 at levels 2–5, 16 deeper), yet the whole row is flagged. Record the first price level that may be wrong, so an analysis skips a row only when its depth walk reaches that level (~99% of rows stay usable).
-  - **`pairs` table** for SQL (Glue + manifest), built from `ref/pairs`, so queries can join Kalshi and Polymarket books by pair
-  - **Research example queries** on the query page, e.g. best-price gap after fees per pair per minute, and minutes with a positive gap per pair. These are rough screens; the Python analyzers stay the precise answer. Note: DuckDB has `ASOF JOIN`, Athena doesn't.
-- [ ] 3.1 `store.py`: DuckDB reader over a local dir or `s3://`
-- [ ] 3.2 Port `analyze_stream.py` to per-event replay; take gaps from `coverage`
-- [ ] 3.3 Port `analyze_maker.py`
-- [ ] 3.4 Option to compare returns against a capital-cost hurdle (Treasury-bill rate)
-- [ ] 3.5 Check that the ported analyzers on migrated data match the original output
+## Stage 3 — Analysis (design: [docs/STAGE3_DESIGN.md](docs/STAGE3_DESIGN.md), awaiting Binoy's approval)
+- [x] 3.0 Design rounds with Binoy (2026-11-17): all decisions are in the design doc and the decisions log
+- [ ] 3.A Upstream changes
+  - per-level `suspect_levels` (Polymarket repairs: differing side/price; Kalshi resync: NULL = whole book)
+  - manifest `bytes`/`modified`
+  - trades `recv_ms`, plus Polymarket `last_trade_price` prints
+  - `ref/pairs/date=D/pairs.jsonl`; daily T-bill rate in `ref/rates/`
+- [ ] 3.B `analysis/data.py`: one DuckDB connection over local / s3 / https, with a local cache keyed on the manifest; `tools/query.py` becomes a wrapper
+- [ ] 3.C `analysis/replay.py` + `analysis/episodes.py`
+  - port of `analyze_stream.py` with `uncertain`, excess return over T-bill and latency sensitivity (50 ms / 250 ms / 1 s / 5 s)
+  - **gate: reproduce Vihaan's `episodes.csv`** on the migrated Nov 9–12 data
+- [ ] 3.D Legacy maker mode (`maker.py` unchanged) — **gate: reproduce `maker_fills.csv`**
+- [ ] 3.E `analysis/maker_live.py`: queue tracking (`--cancel-model pessimistic|pro-rata`), hedge latency, markouts (1/10/60 s), position caps, Polymarket maker rebates (per-pair `poly_maker_rebate_share`)
+- [ ] 3.F `analysis/research.py`: `gaps` (per pair per changed second), `leadlag`, `stale`
+- [ ] 3.G Nightly analysis on EC2 after compaction
+  - writes `curated/results/*` and Glue tables `pairs`, `episodes`, `maker_fills`, `gaps`, `leadlag`, `stale`
+  - starter research queries on the query page
+  - budget: compaction + analysis under ~15 min on the nano, no OOM
+- [ ] 3.H Daily report page `reports/D.html` + `index.html` (inline SVG charts) behind the password
+- [ ] 3.I Move the old `analysis/analyze_stream.py` and `analyze_maker.py` to `deprecated/` once reproduced; update the docs
+- Earlier notes folded into the design: per-level suspect flag; `pairs` table; research queries (DuckDB has `ASOF JOIN`, Athena doesn't)
 
 ## Stage 4 — Pair discovery & maintenance (expanded 2026-11-16 at Binoy's request)
 Goal: a **separate agent** that periodically compares Kalshi and Polymarket and uses agentic exploration to find newly active cross-venue pairs and detect pairs that should be dropped, so the watched list stays current. The recorder already reloads the pairs list, so it follows the agent's updates.
@@ -226,7 +237,9 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
     - wrote the end-of-day checkpoint `date=2026-11-16.json`, the Nov 17 reference snapshot (57 + 57 markets, 0 errors) and the manifest
     - NightlyOK cleared the alarm
     - memory: 0 OOM kills since boot, swap 36 MB used of 1.4 GB, 178 MB available
-  - [ ] Check the 03:15 UTC refresh (Nov 17): the first day built on a saved checkpoint, with Kalshi books carried over
+  - [x] 03:15 UTC refresh (Nov 17) checked: the first day built on a saved checkpoint. Kalshi 49,291 rows, **all deltas** (no new snapshots, as expected) built on the Nov 16 checkpoint; first rows at 00:00:00.03 UTC.
+    - Polymarket 316,864 rows; 63 s wall / 46 CPU-s
+    - Repairs ~77/hour (270 in 3.5 h, 49 tokens), up from ~31/hour on the first evening → track this rate
   - [ ] Check the first **full-day** nightly run (2026-11-18 00:31 UTC, ~5–6× Nov 16's 4.3 h): duration, swap, OOM. If memory gets tight, have `ParquetOut` write to a temp file instead of an in-memory buffer.
 - [~] 6.6 **3-hourly refresh of today's tables** (Binoy, 2026-11-16). Until now, clean tables were rebuilt only nightly, so they lagged up to ~24.5 h.
   - `recorder.compact --today` rebuilds today's books, trades and coverage plus the manifest
@@ -311,6 +324,16 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-16 | Binoy copies the Kalshi key parameters to us-east-2 himself | Binoy |
 | 2026-11-16 | Add a **3-hourly refresh** of today's clean tables, on top of the nightly run | Binoy |
 | 2026-11-16 | Alarm test by real outage (accepted an ~18 min order-book gap); then test alarm fixes on a dummy metric, with no outage | Binoy |
+| 2026-11-17 | Stage 3: analyzers run on the laptop **and** nightly on EC2, with results published as tables | Binoy |
+| 2026-11-17 | Suspect data: per-level markers; results are "uncertain" only if the depth walk used a wrong level | Binoy |
+| 2026-11-17 | Cross-venue alignment by our receive time | Binoy |
+| 2026-11-17 | Capital hurdle: daily 3-month T-bill yield fetched from the US Treasury | Binoy |
+| 2026-11-17 | Laptop data: password-protected web address + local cache | Binoy |
+| 2026-11-17 | SQL: pairs + results tables + research queries, plus Claude's research suggestions (all accepted) | Binoy |
+| 2026-11-17 | Acceptance: reproduce Vihaan's legacy episodes and maker fills | Binoy |
+| 2026-11-17 | Maker sim improved now (new model next to the unchanged maker.py): queue tracking, hedge latency, markouts, caps + rebates | Binoy |
+| 2026-11-17 | Research additions: latency sensitivity, gap time series, lead-lag and stale quotes, daily report page | Binoy |
+| 2026-11-17 | Fees: per-pair rates from the daily pairs file only | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions
