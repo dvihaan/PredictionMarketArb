@@ -1,6 +1,14 @@
 # Taker analysis — critical review of the assumptions
 
-> **Status:** for Binoy's decision, 2026-11-17. The taker analysis (`analysis/episodes.py`, ported from
+> **Decisions (Binoy, 2026-11-17):** adopted A1, A2 (amended), A3, B1, B2, B3 (without the stale criterion),
+> C1, D1, D2. Not adopted: B4. C2 stays a documented limitation.
+> - **A2 amended** after checking the venues' dates: Kalshi's expected expiration is a cautious backstop
+>   (Alaska: 2027-11-03) and Polymarket's endDate is sometimes already past (Ljubljana: 2026-11-16). So the
+>   pairs file's `est_resolution` stays the main date, plus a worst-case figure from the venues' dates.
+> - **A1:** Kalshi APY from a dated rate file (no API); all 57 Polymarket markets have
+>   `holdingRewardsEnabled: false` today.
+>
+> **Original status:** for Binoy's decision, 2026-11-17. The taker analysis (`analysis/episodes.py`, ported from
 > Vihaan's `analyze_stream.py`) reproduces his results exactly. That shows the port is faithful, not that the
 > assumptions are right. Below, each assumption is listed with why it matters for the hypothesis and a proposed
 > change. Nothing changes until it's approved.

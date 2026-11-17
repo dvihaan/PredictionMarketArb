@@ -189,7 +189,31 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
     - no caps or rebates
     - Kalshi hedge fee rounded up per fill
   - Fee check: Polymarket prints say `fee_rate_bps: 0` on every trade, but Polymarket's market records show `feesEnabled: true`, `feeSchedule.rate` 0.04 (politics) / 0.05 (culture), takerOnly, `rebateRate: 0.25`. **Vihaan's fee rates are right.** The 25% maker rebate share feeds 3.E. (Kalshi market records carry no fee fields; check the series endpoint later.)
-- [ ] 3.D.1 **Critical review of the taker analysis** (Binoy asked, 2026-11-17): list each assumption, why it matters for the hypothesis, and a proposed change; Binoy decides before 3.G publishes results
+- [x] 3.D.1 **Critical review of the taker analysis**: [docs/TAKER_REVIEW.md](docs/TAKER_REVIEW.md). Binoy adopted A1, A2 (amended), A3, B1, B2, B3, C1, D1, D2; B4 not adopted; C2 stays a documented limitation.
+  - Checks behind the amendments:
+    - all 57 Polymarket markets have `holdingRewardsEnabled: false` today
+    - Kalshi APY 3.50% (help page, verified 2026-11-17; launched 4.05% in Oct 2025); no API
+    - venue dates are unreliable as resolution dates (Kalshi expected expiration is a cautious backstop, e.g. Alaska 2027-11-03; Polymarket endDate is sometimes already past, e.g. Ljubljana 2026-11-16)
+  - Polymarket market records also carry **liquidity rewards** (`clobRewards`, `rewardsMaxSpread`, `rewardsMinSize`), relevant to the maker model → raise in 3.E
+- [ ] 3.C.2 **Taker revisions** (from the review):
+  - [ ] A1 total return = arbitrage + carry
+    - Kalshi APY on the Kalshi leg's capital, from a dated rate file in the repo
+    - Polymarket holding rewards on the Polymarket leg where `holdingRewardsEnabled` (daily snapshot) is true
+    - excess = total − T-bill
+  - [ ] A2 annualize to the pairs file's `est_resolution` (main), plus a **worst-case** annualized return using the later of the venues' dates (Kalshi expected expiration, Polymarket endDate; past dates ignored); flag `est_resolution` dates that have passed
+  - [ ] A3 capital per venue (Kalshi leg, Polymarket leg) at start and peak
+  - [ ] B1 at-start profit/size/edge/capital/returns as headline columns; peak kept as secondary
+  - [ ] B2 profit and size at fixed capital budgets ($1k / $10k / $50k) at start
+  - [ ] B3 `actionable`:
+    - profit at $1k ≥ $1
+    - total return above the T-bill
+    - still profitable 1 s after start
+    - rule_status = read-close
+    - (no stale criterion, since B4 wasn't adopted)
+    - unknown on polling-era days (no latency data)
+  - [ ] C1 summaries by `rule_status`; `rule_note` column; template-read pairs excluded from actionable
+  - [ ] D1 `opportunity_id`: episodes of the same pair/basket split only by a coverage gap < 120 s are one opportunity; summaries count opportunities
+  - [ ] D2 nightly fee cross-check: pairs-file fees vs Polymarket `feeSchedule` (rate, rebateRate) and Kalshi series fee settings; mismatches flagged
 - [ ] 3.E `analysis/maker_live.py`: queue tracking (`--cancel-model pessimistic|pro-rata`), hedge latency, markouts (1/10/60 s), position caps, Polymarket maker rebates (per-pair `poly_maker_rebate_share`)
 - [ ] 3.F `analysis/research.py`: `gaps` (per pair per changed second), `leadlag`, `stale`
 - [ ] 3.G Nightly analysis on EC2 after compaction
@@ -402,6 +426,8 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-17 | **Working principle:** Vihaan's code is exploratory, not a spec. Don't bend the design to reproduce it; surface questionable parts with details and ask. | Binoy |
 | 2026-11-17 | Maker: run Vihaan's model unchanged as a **baseline** next to the new model (no exact-reproduction work) | Binoy |
 | 2026-11-17 | Critically review the taker analysis and bring a list of proposed changes before 3.G | Binoy |
+| 2026-11-17 | Taker review adopted: A1 carry, A2 dates (amended: hand date + worst case), A3 capital per venue, B1 at-start headline, B2 capital budgets, B3 actionable (without stale), C1 rule status, D1 group restart splits, D2 fee cross-check. Not adopted: B4 stale-leg flag. | Binoy |
+| 2026-11-17 | A1 Kalshi APY kept in a dated rate file in the repo (no API); Polymarket holding-reward eligibility from the daily snapshot | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions
