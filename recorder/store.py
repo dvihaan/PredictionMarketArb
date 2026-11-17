@@ -2,6 +2,7 @@
 
 Both expose the same small interface, with keys relative to the root, using "/" separators:
     list(prefix) -> sorted keys    read(key) -> bytes    write(key, bytes)    exists(key) -> bool
+    list_meta(prefix) -> sorted [(key, bytes, modified_ms)]
 """
 import os
 
@@ -29,6 +30,13 @@ class LocalStore:
                 full = os.path.join(root, name)
                 out.append(os.path.relpath(full, self.root).replace(os.sep, "/"))
         return sorted(out)
+
+    def list_meta(self, prefix):
+        out = []
+        for key in self.list(prefix):
+            st = os.stat(self._path(key))
+            out.append((key, st.st_size, int(st.st_mtime * 1000)))
+        return out
 
     def read(self, key):
         with open(self._path(key), "rb") as f:
@@ -59,9 +67,13 @@ class S3Store:
         return f"{self.prefix}/{key}" if self.prefix else key
 
     def list(self, prefix):
+        return [key for key, _, _ in self.list_meta(prefix)]
+
+    def list_meta(self, prefix):
         out, strip = [], len(self.prefix) + 1 if self.prefix else 0
         for page in self.s3.get_paginator("list_objects_v2").paginate(Bucket=self.bucket, Prefix=self._key(prefix)):
-            out += [o["Key"][strip:] for o in page.get("Contents", [])]
+            out += [(o["Key"][strip:], o["Size"], int(o["LastModified"].timestamp() * 1000))
+                    for o in page.get("Contents", [])]
         return sorted(out)
 
     def read(self, key):

@@ -17,11 +17,20 @@ uses live. Kalshi only sends snapshots on (re)subscribe, so day D starts from da
 books; a missing day D-1 is processed first, up to MAX_CATCH_UP days back.
 
 Book rows carry:
-    source   snapshot | delta | rest_repair
-    suspect  the book may be wrong: Kalshi between a seq gap and the market's fresh snapshot;
-             Polymarket between the last REST check that matched and the check that found a mismatch.
+    source          snapshot | delta | rest_repair
+    suspect         the book may be wrong: Kalshi between a seq gap and the market's fresh snapshot;
+                    Polymarket between the last REST check that matched and the check that found a mismatch.
+    suspect_levels  which levels were wrong, as [{side: "yes"|"no", price}] in yes_bids/no_bids terms.
+                    Polymarket: the levels where our book differed from Polymarket's REST book at the repair.
+                    NULL on a suspect row means "unknown, treat the whole book as uncertain" (Kalshi resyncs,
+                    or a Polymarket window with no REST book to compare).
 At each confirmed Polymarket mismatch the REST book is applied as a "rest_repair" row (Binoy's
-"flag and repair" choice), so later rows build on Polymarket's own book.
+"flag and repair" choice), so later rows build on Polymarket's own book. Suspect Polymarket rows are held
+back until their repair is seen, so a file is not strictly in time order: sort by ts_ms when reading.
+
+Trade rows carry recv_ms, our receive time, where known: Kalshi WebSocket trades, and Polymarket REST
+trades matched to a WebSocket last_trade_price print (same YES token and price, within 2 s). Otherwise
+NULL, and ts_ms (the venue's time; one-second resolution for Polymarket) is the only timing.
 """
 import argparse
 import heapq
@@ -44,13 +53,16 @@ MAX_CATCH_UP = 7
 ROW_GROUP = 20_000
 REPAIR_LOOKBACK_MS = 15_000     # the confirming REST fetch is a few seconds before the mismatch event
 
+PRINT_MATCH_MS = 2_000          # a Polymarket REST trade matches a WebSocket print within this many ms
+
 LEVELS = pa.list_(pa.struct([("price", pa.float64()), ("size", pa.float64())]))
+SUSPECT_LEVELS = pa.list_(pa.struct([("side", pa.string()), ("price", pa.float64())]))
 BOOKS_SCHEMA = pa.schema([("ts_ms", pa.int64()), ("server_ms", pa.int64()), ("market", pa.string()),
                           ("yes_bids", LEVELS), ("no_bids", LEVELS), ("source", pa.string()),
-                          ("suspect", pa.bool_())])
+                          ("suspect", pa.bool_()), ("suspect_levels", SUSPECT_LEVELS)])
 TRADES_SCHEMA = pa.schema([("trade_id", pa.string()), ("market", pa.string()), ("ts_ms", pa.int64()),
                            ("yes_price", pa.float64()), ("size", pa.float64()), ("taker", pa.string()),
-                           ("source", pa.string())])
+                           ("source", pa.string()), ("recv_ms", pa.int64())])
 COVERAGE_SCHEMA = pa.schema([("recv_ms", pa.int64()), ("venue", pa.string()), ("event", pa.string()),
                              ("detail", pa.string())])
 
@@ -155,12 +167,12 @@ def dump_state(kalshi, poly):
 
 # ---- Kalshi -------------------------------------------------------------------------------------
 
-def kalshi_trade(msg):
+def kalshi_trade(msg, recv_ms=None):
     """A Kalshi WebSocket trade, normalized like the REST fetcher in rest_trades.kalshi_trades()."""
     book_side = msg.get("taker_book_side") or {"yes": "bid", "no": "ask"}[msg["taker_side"]]
     return dict(trade_id=msg["trade_id"], market=msg["market_ticker"], ts_ms=int(msg["ts_ms"]),
                 yes_price=float(msg["yes_price_dollars"]), size=float(msg["count_fp"]),
-                taker="buy_yes" if book_side == "bid" else "sell_yes", source="ws")
+                taker="buy_yes" if book_side == "bid" else "sell_yes", source="ws", recv_ms=recv_ms)
 
 
 def process_kalshi(store, d, books, coverage, out, trades):
@@ -175,7 +187,7 @@ def process_kalshi(store, d, books, coverage, out, trades):
         m = json.loads(rec["raw"])
         t = m.get("type")
         if t == "trade":
-            trades["kalshi"].append(kalshi_trade(m["msg"]))
+            trades["kalshi"].append(kalshi_trade(m["msg"], recv))
             continue
         if t not in ("orderbook_snapshot", "orderbook_delta"):
             continue
@@ -191,8 +203,9 @@ def process_kalshi(store, d, books, coverage, out, trades):
             books[ticker].apply_delta(msg)
             source, server = "delta", msg.get("ts_ms")
         b = books[ticker]
+        # A resync means deltas were missed, so which levels are wrong is unknown: suspect_levels stays NULL.
         out.add(ts_ms=recv, server_ms=server, market=ticker, yes_bids=levels(b.yes_bids()),
-                no_bids=levels(b.no_bids()), source=source, suspect=ticker in suspect)
+                no_bids=levels(b.no_bids()), source=source, suspect=ticker in suspect, suspect_levels=None)
 
 
 # ---- Polymarket ---------------------------------------------------------------------------------
@@ -240,21 +253,56 @@ def in_windows(windows, tok, ms):
     return any(s < ms <= e for s, e in windows.get(tok, ()))
 
 
+def wrong_levels(local, rest):
+    """Levels where our rebuilt book differs from Polymarket's REST book, in yes_bids/no_bids terms:
+    a token bid at p is ("yes", p); a token ask at p is ("no", 1 - p), as PolyBook.no_bids() shows it."""
+    good = PolyBook.from_book(rest)
+    out = []
+    for side, mine, theirs, flip in (("yes", local.bid, good.bid, False), ("no", local.ask, good.ask, True)):
+        for p in sorted(set(mine) | set(theirs)):
+            if mine.get(p) != theirs.get(p):
+                out.append({"side": side, "price": round(1 - p, 5) if flip else p})
+    return out
+
+
 def process_poly(store, d, books, coverage, out):
-    """Replay one day of Polymarket messages. books (YES token -> PolyBook) is updated in place."""
+    """Replay one day of Polymarket messages. books (YES token -> PolyBook) is updated in place.
+
+    Returns the day's WebSocket trade prints as [(recv_ms, token, price, ts_ms)], for timing REST trades.
+    Rows inside a token's suspect window are held until that token's repair, so they can be stamped with
+    the levels that turned out to be wrong; rows still held at the end of the day get suspect_levels NULL.
+    """
     windows, repairs = poly_mismatches(store, d, coverage)
     fixes = [(ms, 0, "repair", (tok, b)) for ms, tok, b in sorted(repairs, key=lambda x: x[0])]
     ws = ((r["recv_ms"], 1, "ws", r) for r in raw_records(store, "poly_ws", d))
+    held = defaultdict(list)                   # token -> suspect rows waiting for their repair
+    prints = []
 
     def emit(recv, tok, server, source):
         b = books[tok]
-        out.add(ts_ms=recv, server_ms=server, market=tok, yes_bids=levels(b.yes_bids()),
-                no_bids=levels(b.no_bids()), source=source,
-                suspect=source != "rest_repair" and in_windows(windows, tok, recv))
+        row = dict(ts_ms=recv, server_ms=server, market=tok, yes_bids=levels(b.yes_bids()),
+                   no_bids=levels(b.no_bids()), source=source, suspect=False, suspect_levels=None)
+        if source != "rest_repair" and in_windows(windows, tok, recv):
+            row["suspect"] = True
+            held[tok].append(row)
+        else:
+            out.add(**row)
+
+    def release(tok, upto_ms, wrong):
+        keep = []
+        for row in held.pop(tok, []):
+            if row["ts_ms"] <= upto_ms:
+                out.add(**{**row, "suspect_levels": wrong})
+            else:
+                keep.append(row)
+        if keep:
+            held[tok] = keep
 
     for recv, _, kind, rec in heapq.merge(fixes, ws, key=lambda x: (x[0], x[1])):
         if kind == "repair":
             tok, rest = rec
+            wrong = wrong_levels(books[tok], rest) if tok in books else None
+            release(tok, recv, wrong)
             books[tok] = PolyBook.from_book(rest)
             emit(recv, tok, books[tok].timestamp_ms, "rest_repair")
             continue
@@ -276,6 +324,32 @@ def process_poly(store, d, books, coverage, out):
                             changed.append(c["asset_id"])
                 for tok in changed:
                     emit(recv, tok, ts, "delta")
+            elif kind == "last_trade_price" and ev.get("timestamp"):
+                prints.append((recv, ev["asset_id"], float(ev["price"]), int(ev["timestamp"])))
+    for tok in list(held):
+        release(tok, float("inf"), None)      # no repair seen today: which levels were wrong is unknown
+    return prints
+
+
+def time_poly_trades(rows, prints):
+    """Give Polymarket REST trades our receive time when a WebSocket print matches: same YES token, same
+    YES price, within PRINT_MATCH_MS. Each print is used once. REST prices are per taker order (averaged
+    over fills) and prints are per fill, so only some trades match; the rest keep recv_ms NULL."""
+    by_token = defaultdict(list)
+    for p in sorted(prints, key=lambda x: x[3]):
+        by_token[p[1]].append(p)
+    used, matched = set(), 0
+    for r in rows:
+        if r.get("recv_ms") is not None:
+            continue
+        for p in by_token.get(r["market"], ()):
+            if id(p) in used or abs(p[3] - r["ts_ms"]) > PRINT_MATCH_MS or abs(p[2] - r["yes_price"]) > 1e-6:
+                continue
+            r["recv_ms"] = p[0]
+            used.add(id(p))
+            matched += 1
+            break
+    return matched
 
 
 # ---- trades and coverage -----------------------------------------------------------------------
@@ -285,7 +359,7 @@ def rest_trades(store, d):
     for r in raw_records(store, "trades", d):
         out[r["venue"]].append(dict(trade_id=r["trade_id"], market=r["market"], ts_ms=int(r["ts_ms"]),
                                     yes_price=float(r["yes_price"]), size=float(r["size"]), taker=r["taker"],
-                                    source="rest"))
+                                    source="rest", recv_ms=None))
     return out
 
 
@@ -302,9 +376,14 @@ def upsert_trades(store, venue, rows):
             for r in pq.read_table(io.BytesIO(store.read(key))).to_pylist():
                 merged[r["trade_id"]] = r
         for r in new:
+            r = {**r, "recv_ms": r.get("recv_ms")}
+            old = merged.get(r["trade_id"])
             # REST rows win over WebSocket rows for the same trade; otherwise first seen wins.
-            if r["trade_id"] not in merged or (r["source"] == "rest" and merged[r["trade_id"]]["source"] != "rest"):
-                merged[r["trade_id"]] = r
+            # A known receive time is kept whichever row wins (WebSocket rows have it, REST rows usually don't).
+            winner = r if old is None or (r["source"] == "rest" and old["source"] != "rest") else old
+            other = old if winner is r else r
+            recv = winner.get("recv_ms") if winner.get("recv_ms") is not None else (other or {}).get("recv_ms")
+            merged[r["trade_id"]] = {**winner, "recv_ms": recv}
         rows_sorted = sorted(merged.values(), key=lambda r: (r["ts_ms"], r["trade_id"]))
         buf = io.BytesIO()
         pq.write_table(pa.Table.from_pylist(rows_sorted, schema=TRADES_SCHEMA), buf, compression="zstd")
@@ -349,23 +428,26 @@ def process_day(store, d, log=print, depth=0, today=None):
     store.write(f"curated/coverage/date={d}/part-0.parquet", cov_bytes)
 
     trades = rest_trades(store, d)
-    summary = {}
+    summary, prints = {}, []
     for venue, fn in (("kalshi", process_kalshi), ("poly", process_poly)):
         out = ParquetOut(BOOKS_SCHEMA)
         if venue == "kalshi":
             fn(store, d, state["kalshi"], coverage, out, trades)
         else:
-            fn(store, d, state["poly"], coverage, out)
+            prints = fn(store, d, state["poly"], coverage, out)
         data = out.finish()
         store.write(f"curated/books/venue={venue}/date={d}/part-0.parquet", data)
         summary[venue] = (out.rows, len(data))
+    timed = time_poly_trades(trades.get("poly", []), prints)
     n_trades = {v: upsert_trades(store, v, rows) for v, rows in trades.items()}
     complete = d < today
     if complete:
         store.write(state_key(d), dump_state(state["kalshi"], state["poly"]))
     log(f"{d}: kalshi {summary['kalshi'][0]} book rows ({summary['kalshi'][1] / 1e6:.1f} MB), "
         f"poly {summary['poly'][0]} book rows ({summary['poly'][1] / 1e6:.1f} MB), "
-        f"{n_cov} coverage events, trades written {n_trades}, {time.monotonic() - started:.0f} s"
+        f"{n_cov} coverage events, trades written {n_trades} "
+        f"(Polymarket REST trades timed by a print: {timed} of {len(trades.get('poly', []))}), "
+        f"{time.monotonic() - started:.0f} s"
         + ("" if complete else " (day in progress: end-of-day books not saved)"))
 
 
@@ -374,15 +456,16 @@ MANIFEST_KEY = "curated/manifest.json"
 
 def write_manifest(store):
     """Index of the curated and reference files, so tools reading over HTTPS can find them without
-    listing the bucket. {"generated_ms", "tables": {"books": [{"key", "venue", "date", "bytes"}], ...}}."""
+    listing the bucket. {"generated_ms", "tables": {"books": [{"key", "venue", "date", "bytes", "modified"}],
+    ...}}. bytes and modified (epoch ms) let a local cache tell when a file has changed and needs re-downloading."""
     tables = defaultdict(list)
-    for key in store.list("curated/"):
+    for key, size, modified in store.list_meta("curated/"):
         if key.startswith("curated/_state/") or not key.endswith(".parquet"):
             continue
         table = key.split("/")[1]
         parts = dict(p.split("=", 1) for p in key.split("/")[2:-1] if "=" in p)
-        tables[table].append({"key": key, **parts})
-    tables["ref"] = [{"key": k} for k in store.list("ref/")]
+        tables[table].append({"key": key, **parts, "bytes": size, "modified": modified})
+    tables["ref"] = [{"key": k, "bytes": size, "modified": modified} for k, size, modified in store.list_meta("ref/")]
     body = {"generated_ms": int(time.time() * 1000), "tables": dict(tables)}
     store.write(MANIFEST_KEY, json.dumps(body, indent=1).encode())
     return {t: len(v) for t, v in tables.items()}
@@ -410,9 +493,11 @@ def main(argv=None):
     if args.pairs:
         from recorder import refdata
         today = datetime.now(timezone.utc).date().isoformat()
-        n_pairs, n_k, n_p, errors = refdata.snapshot(store, today, args.pairs, args.region)
+        n_pairs, n_k, n_p, errors, tbill = refdata.snapshot(store, today, args.pairs, args.region)
+        rate = (f"T-bill {tbill['yield_pct']}% ({tbill['rate_date']})" if tbill
+                else "T-bill rate NOT fetched (analysis falls back to the latest stored rate)")
         print(f"reference data {today}: {n_pairs} pairs, {n_k} Kalshi and {n_p} Polymarket markets, "
-              f"{errors} fetch errors", flush=True)
+              f"{errors} fetch errors, {rate}", flush=True)
     for i in range(args.days - 1, -1, -1):
         d = (end - timedelta(days=i)).isoformat()
         if not has_raw(store, d):

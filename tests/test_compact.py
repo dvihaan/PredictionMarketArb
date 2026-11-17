@@ -162,6 +162,8 @@ class CompactTest(unittest.TestCase):
         rows = [(x["market"], x["source"], x["suspect"]) for x in self.books("kalshi", D1)]
         self.assertEqual(rows, [("K", "snapshot", False), ("J", "snapshot", False), ("K", "delta", True),
                                 ("K", "snapshot", False), ("K", "delta", False), ("J", "delta", True)])
+        # Missed Kalshi deltas: which levels are wrong is unknown, so suspect_levels is NULL (whole book).
+        self.assertTrue(all(x["suspect_levels"] is None for x in self.books("kalshi", D1)))
 
     # ---- Polymarket ----
 
@@ -187,6 +189,50 @@ class CompactTest(unittest.TestCase):
         self.assertEqual(rows[3][:3], (63_100, "snapshot", False))
         self.assertEqual(rows[4][:3], (70_000, "delta", False))
         self.assertEqual(self.books("poly", D1)[4]["no_bids"], [])        # the only ask was removed
+        # Per-level marker: only the YES bid at 0.50 was wrong (160 vs Polymarket's 100); the ask was fine.
+        levels = [x["suspect_levels"] for x in self.books("poly", D1)]
+        self.assertEqual(levels[1], [{"side": "yes", "price": 0.5}])
+        self.assertEqual([levels[i] for i in (0, 2, 3, 4)], [None] * 4)
+
+    def test_poly_wrong_ask_marked_in_no_bid_terms(self):
+        r = self.raw
+        rest_ok = pbook("Y", [(0.5, 100)], [(0.52, 10)], T1)
+        r.poly(T1 + 1000, [rest_ok])
+        r.rest(T1 + 30_000, [rest_ok])
+        r.poly(T1 + 40_000, pchange("Y", 0.53, 7, "SELL", T1 + 40_000))  # an ask Polymarket never shows
+        r.rest(T1 + 60_000, [rest_ok])
+        r.rest(T1 + 63_000, [rest_ok])
+        r.cov(T1 + 63_001, "poly", "book_mismatch", tokens=["Y"])
+        r.close()
+        self.run_day(D1)
+        suspect = [x for x in self.books("poly", D1) if x["suspect"]]
+        # A YES ask at 0.53 appears in no_bids at 1 - 0.53 = 0.47.
+        self.assertEqual([x["suspect_levels"] for x in suspect], [[{"side": "no", "price": 0.47}]])
+
+    def test_poly_window_without_repair_book_is_whole_book_uncertain(self):
+        r = self.raw
+        r.poly(T1 + 1000, [pbook("Y", [(0.5, 100)], [], T1)])
+        r.poly(T1 + 2000, pchange("Y", 0.5, 160, "BUY", T1 + 2000))
+        r.cov(T1 + 3000, "poly", "book_mismatch", tokens=["Y"])           # no REST books recorded at all
+        r.close()
+        self.run_day(D1)
+        rows = self.books("poly", D1)
+        self.assertEqual([(x["suspect"], x["suspect_levels"]) for x in rows], [(True, None), (True, None)])
+
+    def test_poly_rest_trade_timed_by_matching_print(self):
+        r = self.raw
+        r.poly(T1 + 1000, [pbook("Y", [(0.5, 100)], [], T1)])
+        r.poly(T1 + 5047, {"event_type": "last_trade_price", "asset_id": "Y", "market": "m", "price": "0.5",
+                           "size": "3", "side": "SELL", "timestamp": str(T1 + 5000), "transaction_hash": "0xab"})
+        r.trade(T1 + 60_000, venue="poly", trade_id="p1", market="Y", ts_ms=T1 + 5000, yes_price=0.5, size=3.0,
+                taker="sell_yes")
+        r.trade(T1 + 60_000, venue="poly", trade_id="p2", market="Y", ts_ms=T1 + 9000, yes_price=0.48, size=1.0,
+                taker="sell_yes")                                            # no print at this price
+        r.close()
+        self.run_day(D1)
+        got = {t["trade_id"]: t["recv_ms"] for t in self.trades("poly", D1)}
+        self.assertEqual(got, {"p1": T1 + 5047, "p2": None})
+        self.assertIn("timed by a print: 1 of 2", self.logs[-1])
 
     def test_poly_no_entries_are_ignored(self):
         r = self.raw
@@ -218,6 +264,8 @@ class CompactTest(unittest.TestCase):
         self.run_day(D2)
         k = self.trades("kalshi", D1)
         self.assertEqual([(t["trade_id"], t["source"], t["taker"]) for t in k], [("t1", "rest", "buy_yes")])
+        # The REST row wins, but keeps the WebSocket row's receive time.
+        self.assertEqual(k[0]["recv_ms"], T1 + 5000)
         p = self.trades("poly", D1)
         self.assertEqual([t["trade_id"] for t in p], ["p0", "p1"])       # sorted by time, no duplicate p1
 
@@ -249,11 +297,16 @@ class CompactTest(unittest.TestCase):
         self.store.write("ref/pairs/date=2026-11-16/pairs.json", b"{}")
         counts = write_manifest(self.store)
         m = json.loads(self.store.read(MANIFEST_KEY))
-        books = m["tables"]["books"]
-        self.assertIn({"key": f"curated/books/venue=kalshi/date={D1}/part-0.parquet", "venue": "kalshi",
-                       "date": D1}, books)
+        books = {b["key"]: b for b in m["tables"]["books"]}
+        key = f"curated/books/venue=kalshi/date={D1}/part-0.parquet"
+        entry = books[key]
+        self.assertEqual((entry["venue"], entry["date"]), ("kalshi", D1))
+        # bytes and modified let the laptop cache detect changed files
+        self.assertEqual(entry["bytes"], len(self.store.read(key)))
+        self.assertGreater(entry["modified"], 1_700_000_000_000)
         self.assertNotIn("_state", json.dumps(m))
-        self.assertEqual(m["tables"]["ref"], [{"key": "ref/pairs/date=2026-11-16/pairs.json"}])
+        self.assertEqual([r["key"] for r in m["tables"]["ref"]], ["ref/pairs/date=2026-11-16/pairs.json"])
+        self.assertEqual(m["tables"]["ref"][0]["bytes"], 2)
         self.assertEqual(counts["coverage"], 1)
 
     def test_coverage_detail_is_json(self):

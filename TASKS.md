@@ -123,11 +123,23 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
 
 ## Stage 3 — Analysis (design: [docs/STAGE3_DESIGN.md](docs/STAGE3_DESIGN.md), awaiting Binoy's approval)
 - [x] 3.0 Design rounds with Binoy (2026-11-17): all decisions are in the design doc and the decisions log
-- [ ] 3.A Upstream changes
-  - per-level `suspect_levels` (Polymarket repairs: differing side/price; Kalshi resync: NULL = whole book)
-  - manifest `bytes`/`modified`
-  - trades `recv_ms`, plus Polymarket `last_trade_price` prints
-  - `ref/pairs/date=D/pairs.jsonl`; daily T-bill rate in `ref/rates/`
+- [~] 3.A Upstream changes: code done and tested; **not deployed yet**
+  - Pre-checks on real data (2026-11-17):
+    - Polymarket `last_trade_price` prints exist, arrive ~47 ms after the trade, YES tokens only
+    - Treasury bill-rate CSV works: 13-week coupon equivalent 4.26% on 2026-11-16
+  - [x] `suspect_levels list<struct<side, price>>` on books
+    - Polymarket: at a repair, the levels where our book differed from REST, in yes_bids/no_bids terms. Suspect rows are held per token until the repair, so **files are no longer strictly time-ordered** (documented: sort by ts_ms).
+    - Kalshi resync, or a Polymarket window without a REST book: NULL (whole book uncertain)
+  - [x] Manifest entries carry `bytes` + `modified` (store `list_meta` for local/S3)
+  - [x] Trades `recv_ms`
+    - Kalshi WS trades keep it, including when the REST row wins the de-duplication
+    - Polymarket REST trades get it from a matching print (same YES token and price, within 2 s, each print used once)
+  - [x] `ref/pairs/date=D/pairs.jsonl`; `ref/rates/date=D/tbill.json` (falls back to last year's file in early January; logged if not fetched)
+  - [x] Tests: 8 new (80 total)
+  - [x] Validated on a local copy of Nov 16 raw data: row counts identical to production; 49 s; ~350 MB peak on the Mac
+    - **Suspect markers:** all 5,626 suspect Polymarket rows have known levels (avg 1.4). Of ~8,000 marked levels: **33 at the best price**, 827 at 2–5, 3,556 at 6–25, 3,611 beyond the top 25 or removed.
+    - **Trade timing:** Kalshi 655/686 (95%). Polymarket **31/175 (18%)**: prints are YES-token only and REST prices are averaged per taker order. → Polymarket maker timing mostly uses 1-second REST timestamps. Raise in 3.E: subscribe to NO tokens too, for their prints?
+  - [ ] Deploy (push + `infra/update.sh`). Glue columns for `suspect_levels` and trades `recv_ms` come with the 3.G template deploy.
 - [ ] 3.B `analysis/data.py`: one DuckDB connection over local / s3 / https, with a local cache keyed on the manifest; `tools/query.py` becomes a wrapper
 - [ ] 3.C `analysis/replay.py` + `analysis/episodes.py`
   - port of `analyze_stream.py` with `uncertain`, excess return over T-bill and latency sensitivity (50 ms / 250 ms / 1 s / 5 s)

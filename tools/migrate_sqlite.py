@@ -45,7 +45,7 @@ def main(argv=None):
         if key not in outs:
             outs[key] = ParquetOut(BOOKS_SCHEMA)
         outs[key].add(ts_ms=recv, server_ms=server, market=market, yes_bids=levels(json.loads(yes)),
-                      no_bids=levels(json.loads(no)), source="rest_poll", suspect=False)
+                      no_bids=levels(json.loads(no)), source="rest_poll", suspect=False, suspect_levels=None)
         counts[key] += 1
     for (venue, d), out in sorted(outs.items()):
         store.write(f"curated/books/venue={venue}/date={d}/part-legacy.parquet", out.finish())
