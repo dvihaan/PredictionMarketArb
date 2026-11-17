@@ -174,7 +174,22 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
     - Recorder stopped 16:03:48 and was active 16:04:15 → ~27 s gap
     - Code `286be0e`; timers intact (refresh 18:15, nightly 00:30)
     - Cost ≈ +$3/mo, total ≈ $13.50/mo
-- [ ] 3.D Legacy maker mode (`maker.py` unchanged) — **gate: reproduce `maker_fills.csv`**
+- [x] 3.D **Maker baseline** (`analysis/maker_baseline.py`, `python -m analysis.run maker-baseline`). Binoy's decision: run Vihaan's `QuoteSim` *unchanged* as a baseline next to the new model; don't carry the polling recorder's workarounds forward and don't chase an exact match.
+  - Not carried over: trade-coverage marks (curated trades are complete)
+  - Live days have no polling cycles, so "hedge at the next book recorded" = the first book update of any market after the fill. That's usually ms later, far faster than his ~5 s. This is a known baseline artifact; the new model uses an explicit hedge latency.
+  - Kept unchanged: his 10 s minimum rest, back-of-queue joining, re-queue after any fill, queue/through fill models, annualized hurdle
+  - **Polling days: matches his `maker_fills.csv` row for row (39/39)** even without the marks, which never affected a fill. Permanent test.
+  - Live Nov 16–17 (19.6 h of books): 57 fills. Kalshi-side queue model: 39 fills, 915 contracts, quoted 2.97¢ / realized 2.87¢, $26.29. Polymarket side: 2 fills. Through model: 16 fills, $16.50.
+  - Runtime: 345 s → 243 s for two live days after scoping the per-update loop to pairs that can change (byte-identical output). Not optimized further (Binoy: no more tuning). Measure the real nightly runtime in 3.G.
+  - Review of his maker assumptions (all shown to Binoy):
+    - coverage marks and the 10 s rest are polling workarounds
+    - "next book" hedging timing
+    - re-queue after partial fills
+    - never improves the price
+    - no caps or rebates
+    - Kalshi hedge fee rounded up per fill
+  - Fee check: Polymarket prints say `fee_rate_bps: 0` on every trade, but Polymarket's market records show `feesEnabled: true`, `feeSchedule.rate` 0.04 (politics) / 0.05 (culture), takerOnly, `rebateRate: 0.25`. **Vihaan's fee rates are right.** The 25% maker rebate share feeds 3.E. (Kalshi market records carry no fee fields; check the series endpoint later.)
+- [ ] 3.D.1 **Critical review of the taker analysis** (Binoy asked, 2026-11-17): list each assumption, why it matters for the hypothesis, and a proposed change; Binoy decides before 3.G publishes results
 - [ ] 3.E `analysis/maker_live.py`: queue tracking (`--cancel-model pessimistic|pro-rata`), hedge latency, markouts (1/10/60 s), position caps, Polymarket maker rebates (per-pair `poly_maker_rebate_share`)
 - [ ] 3.F `analysis/research.py`: `gaps` (per pair per changed second), `leadlag`, `stale`
 - [ ] 3.G Nightly analysis on EC2 after compaction
@@ -384,6 +399,9 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-17 | Fees: per-pair rates from the daily pairs file only | Binoy |
 | 2026-11-17 | Deploy 3.A immediately (before the first full-day nightly run) | Binoy |
 | 2026-11-17 | Memory: stop optimizing; upgrade to **t4g.micro** (1 GB, +~$3/mo); measure the real nightly peak in 3.G | Binoy |
+| 2026-11-17 | **Working principle:** Vihaan's code is exploratory, not a spec. Don't bend the design to reproduce it; surface questionable parts with details and ask. | Binoy |
+| 2026-11-17 | Maker: run Vihaan's model unchanged as a **baseline** next to the new model (no exact-reproduction work) | Binoy |
+| 2026-11-17 | Critically review the taker analysis and bring a list of proposed changes before 3.G | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions
