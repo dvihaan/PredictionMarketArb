@@ -166,10 +166,14 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
     - Tried and rejected: DuckDB memory caps (it can't sort nested books within 256 MB)
     - Replaced the full sort with a streaming reorder that holds only `max_lateness` ms of rows: identical results, kept, but **peak memory unchanged (~1 GB)** → the sort wasn't the cause
     - Binoy's call (2026-11-17): stop optimizing; move to **t4g.micro (1 GB)**; measure the real peak on the server in 3.G and revisit only if it doesn't fit
-- [~] 3.C.1 Template ready (`InstanceType` default `t4g.micro` on `RecorderInstance`; launch template pinned to `t4g.nano` literally). **Change-set preview (2026-11-17):** LaunchTemplate *not* changed; `RecorderInstance` Modify (InstanceType; 'Conditional' = stop/start for EBS-backed); `InstanceRecoveryAlarm` dimensions refreshed. Preview deleted. Originally: put `InstanceType` on the instance resource (stop/start, disk kept) rather than in the launch template (replacement, ~18 min reinstall). Preview with a change set first. Deploy the raw-file overwrite fix (`408f712`) **before** the resize, since the resize restarts the recorder.
+- [x] 3.C.1 Template ready (`InstanceType` default `t4g.micro` on `RecorderInstance`; launch template pinned to `t4g.nano` literally). **Change-set preview (2026-11-17):** LaunchTemplate *not* changed; `RecorderInstance` Modify (InstanceType; 'Conditional' = stop/start for EBS-backed); `InstanceRecoveryAlarm` dimensions refreshed. Preview deleted. Originally: put `InstanceType` on the instance resource (stop/start, disk kept) rather than in the launch template (replacement, ~18 min reinstall). Preview with a change set first. Deploy the raw-file overwrite fix (`408f712`) **before** the resize, since the resize restarts the recorder.
   - First `deploy.sh` (2026-11-17 ~15:58 UTC): stack UPDATE_COMPLETE, but **the instance stayed t4g.nano**. `cloudformation deploy` keeps the *stored* value of parameters not passed (InstanceType was stored as t4g.nano), and the new `InstanceType` property still caused a stop/start (~16 s recording gap, no benefit).
   - Fix: `deploy.sh` now passes `InstanceType` (env `INSTANCE_TYPE`, default t4g.micro) and documents the stored-parameter behaviour. Second change-set preview: RecorderInstance Modify (stop/start), launch template untouched.
-  - [ ] Binoy re-runs `deploy.sh`; confirm t4g.micro, recorder back, gap length
+  - [x] Binoy re-ran `deploy.sh` (2026-11-17 ~16:03 UTC). **Instance is t4g.micro** (confirmed from instance metadata), same instance and disk.
+    - Memory 910 MB total, 642 MB available while recording; swap unused
+    - Recorder stopped 16:03:48 and was active 16:04:15 → ~27 s gap
+    - Code `286be0e`; timers intact (refresh 18:15, nightly 00:30)
+    - Cost ≈ +$3/mo, total ≈ $13.50/mo
 - [ ] 3.D Legacy maker mode (`maker.py` unchanged) — **gate: reproduce `maker_fills.csv`**
 - [ ] 3.E `analysis/maker_live.py`: queue tracking (`--cancel-model pessimistic|pro-rata`), hedge latency, markouts (1/10/60 s), position caps, Polymarket maker rebates (per-pair `poly_maker_rebate_share`)
 - [ ] 3.F `analysis/research.py`: `gaps` (per pair per changed second), `leadlag`, `stale`
