@@ -63,14 +63,25 @@ def _jsonl_gz(rows):
     return gzip.compress("".join(json.dumps(r, separators=(",", ":")) + "\n" for r in rows).encode())
 
 
-def fetch_market(session, url, ident):
-    try:
-        r = session.get(url.format(ident), timeout=15)
-        r.raise_for_status()
-        body = r.json()
-        return body.get("market", body) if isinstance(body, dict) else {"id": ident, "body": body}
-    except Exception as e:
-        return {"id": ident, "error": f"{type(e).__name__}: {e}"[:300]}
+RETRY_STATUS = (429, 500, 502, 503, 504)
+
+
+def fetch_market(session, url, ident, attempts=4, backoff_s=1.0, sleep=time.sleep):
+    """One market's metadata. Rate limits (429) and server errors are retried with a growing pause:
+    the recorder's trade polling shares this machine's address, so occasional 429s are expected."""
+    for attempt in range(attempts):
+        try:
+            r = session.get(url.format(ident), timeout=15)
+            if getattr(r, "status_code", 200) in RETRY_STATUS and attempt < attempts - 1:
+                sleep(backoff_s * 2 ** attempt)
+                continue
+            r.raise_for_status()
+            body = r.json()
+            return body.get("market", body) if isinstance(body, dict) else {"id": ident, "body": body}
+        except Exception as e:
+            if attempt == attempts - 1:
+                return {"id": ident, "error": f"{type(e).__name__}: {e}"[:300]}
+            sleep(backoff_s * 2 ** attempt)
 
 
 def snapshot(store, d, pairs_source, region=None, pause_s=0.1):

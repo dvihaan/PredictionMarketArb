@@ -62,6 +62,33 @@ class TbillTest(unittest.TestCase):
         self.assertIsNone(refdata.fetch_tbill(Session(), "2026-11-17"))
 
 
+class FetchMarketTest(unittest.TestCase):
+    def test_retries_rate_limit_then_succeeds(self):
+        replies = [Resp("", status=429), Resp("", status=429), Resp(json.dumps({"market": {"ticker": "K"}}))]
+        for r in replies:
+            r.status_code = r.status
+
+        class Session:
+            def get(self, url, timeout):
+                return replies.pop(0)
+
+        pauses = []
+        got = refdata.fetch_market(Session(), "https://x/{}", "K", sleep=pauses.append)
+        self.assertEqual(got, {"ticker": "K"})
+        self.assertEqual(pauses, [1.0, 2.0])
+
+    def test_gives_up_with_error_record(self):
+        class Session:
+            def get(self, url, timeout):
+                r = Resp("", status=429)
+                r.status_code = 429
+                return r
+
+        got = refdata.fetch_market(Session(), "https://x/{}", "K", attempts=3, sleep=lambda s: None)
+        self.assertEqual(got["id"], "K")
+        self.assertIn("429", got["error"])
+
+
 class SnapshotTest(unittest.TestCase):
     def test_writes_pairs_jsonl_and_tbill(self):
         pairs = [{"pair_id": "A", "kalshi_ticker": "KA", "poly_yes_token": "1", "poly_market_id": "11"},

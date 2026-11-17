@@ -139,7 +139,12 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
   - [x] Validated on a local copy of Nov 16 raw data: row counts identical to production; 49 s; ~350 MB peak on the Mac
     - **Suspect markers:** all 5,626 suspect Polymarket rows have known levels (avg 1.4). Of ~8,000 marked levels: **33 at the best price**, 827 at 2–5, 3,556 at 6–25, 3,611 beyond the top 25 or removed.
     - **Trade timing:** Kalshi 655/686 (95%). Polymarket **31/175 (18%)**: prints are YES-token only and REST prices are averaged per taker order. → Polymarket maker timing mostly uses 1-second REST timestamps. Raise in 3.E: subscribe to NO tokens too, for their prints?
-  - [ ] Deploy (push + `infra/update.sh`). Glue columns for `suspect_levels` and trades `recv_ms` come with the 3.G template deploy.
+  - [x] Deployed before tonight's run (Binoy's choice, 2026-11-17 04:05 UTC): pushed (auto-synced) and `infra/update.sh` → server on `2ae4590`
+    - Reprocessed Nov 16 on the server (85 s): same row counts, new columns
+    - Refreshed Nov 17 (74 s; 10/43 Polymarket trades timed by a print)
+    - Reference snapshot now has `pairs.jsonl` and `tbill.json` (4.26%, 2026-11-16); 0 OOM kills
+    - One Kalshi metadata fetch hit **HTTP 429** (rate limit, shared with the recorder's trade polling) → `fetch_market` now retries 429/5xx with backoff (1, 2, 4 s); tests added. Ships with the next update.
+  - Glue columns for `suspect_levels` and trades `recv_ms` come with the 3.G template deploy
 - [ ] 3.B `analysis/data.py`: one DuckDB connection over local / s3 / https, with a local cache keyed on the manifest; `tools/query.py` becomes a wrapper
 - [ ] 3.C `analysis/replay.py` + `analysis/episodes.py`
   - port of `analyze_stream.py` with `uncertain`, excess return over T-bill and latency sensitivity (50 ms / 250 ms / 1 s / 5 s)
