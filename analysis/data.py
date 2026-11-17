@@ -232,6 +232,23 @@ class Data:
         with open(os.path.join(ROOT, "watchlist.json"), encoding="utf-8") as f:
             return json.load(f)["pairs"], "watchlist.json"
 
+    def markets(self, d):
+        """({kalshi ticker: record}, {polymarket market id: record}) from the nearest daily market snapshot to
+        day d (the venues' own metadata: dates, fees, reward flags), or ({}, {}) if none is stored."""
+        import gzip
+        out = []
+        for name, key in (("kalshi.jsonl.gz", "ticker"), ("poly.jsonl.gz", "id")):
+            _, entry = self._nearest(self._ref("markets", name), d)
+            recs = {}
+            if entry is not None:
+                with gzip.open(self.source.path(entry), "rt", encoding="utf-8") as f:
+                    for line in f:
+                        r = json.loads(line)
+                        if r.get(key) is not None:
+                            recs[str(r[key])] = r
+            out.append(recs)
+        return out[0], out[1]
+
     def tbill(self, d):
         """(yield percent, rate date) in effect on day d: the latest published on or before d, else the earliest
         stored. (None, None) if no rate has been stored yet."""

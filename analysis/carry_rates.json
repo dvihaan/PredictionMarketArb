@@ -1,0 +1,11 @@
+{
+ "note": "Interest the venues pay on capital held in positions ('carry'), used for total return = arbitrage + carry (docs/TAKER_REVIEW.md, A1). Neither venue publishes these in an API: update this file by hand when a venue changes its rate. Each entry applies from its 'from' date until the next entry. Polymarket holding rewards apply only to markets with holdingRewardsEnabled = true in that day's market snapshot.",
+ "kalshi_apy_pct": [
+  {"from": "2025-10-01", "pct": 4.05, "source": "Kalshi blog: interest on cash and open positions launched October 2025 at 4.05% APY"},
+  {"from": "2026-11-01", "pct": 3.50, "source": "Kalshi help center 'APY on Kalshi', verified 2026-11-17 (US users; average monthly balance >= $250). The date it changed from 4.05% is not known; applied from the start of this project's data."}
+ ],
+ "polymarket_holding_rewards_pct": [
+  {"from": "2025-09-01", "pct": 4.00, "source": "Polymarket holding rewards launch: 4% annualized on eligible long-dated markets"},
+  {"from": "2026-06-01", "pct": 3.25, "source": "Third-party guide citing Polymarket's help center, June 2026; not independently verified. No watched market was eligible as of 2026-11-17."}
+ ]
+}

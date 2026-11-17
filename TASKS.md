@@ -195,25 +195,26 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
     - Kalshi APY 3.50% (help page, verified 2026-11-17; launched 4.05% in Oct 2025); no API
     - venue dates are unreliable as resolution dates (Kalshi expected expiration is a cautious backstop, e.g. Alaska 2027-11-03; Polymarket endDate is sometimes already past, e.g. Ljubljana 2026-11-16)
   - Polymarket market records also carry **liquidity rewards** (`clobRewards`, `rewardsMaxSpread`, `rewardsMinSize`), relevant to the maker model → raise in 3.E
-- [ ] 3.C.2 **Taker revisions** (from the review):
-  - [ ] A1 total return = arbitrage + carry
-    - Kalshi APY on the Kalshi leg's capital, from a dated rate file in the repo
-    - Polymarket holding rewards on the Polymarket leg where `holdingRewardsEnabled` (daily snapshot) is true
-    - excess = total − T-bill
-  - [ ] A2 annualize to the pairs file's `est_resolution` (main), plus a **worst-case** annualized return using the later of the venues' dates (Kalshi expected expiration, Polymarket endDate; past dates ignored); flag `est_resolution` dates that have passed
-  - [ ] A3 capital per venue (Kalshi leg, Polymarket leg) at start and peak
-  - [ ] B1 at-start profit/size/edge/capital/returns as headline columns; peak kept as secondary
-  - [ ] B2 profit and size at fixed capital budgets ($1k / $10k / $50k) at start
-  - [ ] B3 `actionable`:
-    - profit at $1k ≥ $1
-    - total return above the T-bill
-    - still profitable 1 s after start
-    - rule_status = read-close
-    - (no stale criterion, since B4 wasn't adopted)
-    - unknown on polling-era days (no latency data)
-  - [ ] C1 summaries by `rule_status`; `rule_note` column; template-read pairs excluded from actionable
-  - [ ] D1 `opportunity_id`: episodes of the same pair/basket split only by a coverage gap < 120 s are one opportunity; summaries count opportunities
-  - [ ] D2 nightly fee cross-check: pairs-file fees vs Polymarket `feeSchedule` (rate, rebateRate) and Kalshi series fee settings; mismatches flagged
+- [x] 3.C.2 **Taker revisions** (from the review), all implemented and tested:
+  - `analysis/economics.py`:
+    - capital per venue
+    - `budget_walk` (edge.walk's rules + a capital cap; with no cap it equals `edge.walk` on 500 random books)
+    - carry (Kalshi APY on the Kalshi leg; Polymarket holding rewards where enabled)
+    - worst-case end date
+  - `analysis/carry_rates.json`: dated rates (Kalshi 4.05% from 2025-10, 3.50% verified 2026-11-17; Polymarket holding rewards 4.00%/3.25%, with sources and caveats)
+  - `episodes.py` new columns: `rule_note`, `opportunity_id`, `start_*` (headline), `carry_pct`, `start_total_annualized_pct`, `start_excess_pct`, `worst_case_end` and its worst-case total, `est_resolution_passed`, `profit/size_{1k,10k,50k}`, `peak_capital_kalshi/poly`, `actionable`. Vihaan's original columns are unchanged (the legacy reproduction test still passes).
+  - Summary leads with actionable opportunities and the rule-status breakdown, then the largest opportunities by at-start profit
+  - D2 `analysis/feecheck.py` + `python -m analysis.run fee-check [--live]`
+    - the daily snapshot now also stores Kalshi series fee settings (`kalshi_series.jsonl.gz`; ships with the next update)
+    - **Live check (2026-11-17): all 114 taker-fee rates match** (57 Polymarket, 57 Kalshi with multiplier 1 → 0.07)
+    - flagged: `poly_maker_rebate_share` missing from the pairs file (published 0.25) → 3.E
+  - Tests: economics 9, episodes +4 (start/capital/carry/excess, budgets, opportunity joining, actionable), fee check 1; **115 total**
+  - **First results with the revisions** (Nov 16–17, 19.6 h live):
+    - 538 episodes → 379 opportunities → **13 actionable**
+    - **Marine Le Pen P_YES+K_NO:** $172.86 at start, $28.36 per $1k, 2.76¢; total 5.7% incl. carry = **+1.4 pts over the T-bill** (arbitrage alone ~2.2%: carry flips the verdict, as the review suspected)
+    - Glucksmann +0.5; Time POY Mamdani +10.3
+    - **142 opportunities excluded only because their pairs are `template-read`** (e.g. Oscars, +3.2 pts) → reading those rules is high-value (Stage 4 / Vihaan)
+  - [ ] Decide: add `poly_maker_rebate_share` (0.25 published) to the pairs file (needed by the 3.E rebates)
 - [ ] 3.E `analysis/maker_live.py`: queue tracking (`--cancel-model pessimistic|pro-rata`), hedge latency, markouts (1/10/60 s), position caps, Polymarket maker rebates (per-pair `poly_maker_rebate_share`)
 - [ ] 3.F `analysis/research.py`: `gaps` (per pair per changed second), `leadlag`, `stale`
 - [ ] 3.G Nightly analysis on EC2 after compaction

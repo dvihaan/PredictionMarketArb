@@ -4,6 +4,7 @@
     ref/pairs/date=D/pairs.jsonl           the same pairs, one JSON object per line (for the Glue/Athena `pairs` table)
     ref/markets/date=D/kalshi.jsonl.gz     Kalshi's full market record per ticker (title, rules, status, result, ...)
     ref/markets/date=D/poly.jsonl.gz       Polymarket's full market record per market (question, description, closed, ...)
+    ref/markets/date=D/kalshi_series.jsonl.gz   Kalshi's series record per watched series (fee_type, fee_multiplier, ...)
     ref/rates/date=D/tbill.json            latest 3-month (13-week) Treasury bill yield published by the US Treasury,
                                            coupon-equivalent percent: the capital-cost hurdle for annualized returns
 
@@ -21,6 +22,7 @@ import requests
 from recorder import pairs as pairs_mod
 
 KALSHI_MARKET = "https://external-api.kalshi.com/trade-api/v2/markets/{}"
+KALSHI_SERIES = "https://external-api.kalshi.com/trade-api/v2/series/{}"
 GAMMA_MARKET = "https://gamma-api.polymarket.com/markets/{}"
 TBILL_CSV = ("https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/"
              "{year}/all?type=daily_treasury_bill_rates&field_tdr_date_value={year}&page&_format=csv")
@@ -104,6 +106,13 @@ def snapshot(store, d, pairs_source, region=None, pause_s=0.1):
         poly.append({**fetch_market(session, GAMMA_MARKET, market_id), "fetched_ms": int(time.time() * 1000)})
         time.sleep(pause_s)
     store.write(f"ref/markets/date={d}/kalshi.jsonl.gz", _jsonl_gz(kalshi))
+    # Fee settings live on the series (e.g. KXAKSENATE for KXAKSENATE-26NOV03): one record per watched series.
+    series = []
+    for st in sorted({(r.get("event_ticker") or "").split("-")[0] for r in kalshi if r.get("event_ticker")}):
+        rec = fetch_market(session, KALSHI_SERIES, st)
+        series.append({**(rec.get("series", rec) if isinstance(rec, dict) else rec), "fetched_ms": int(time.time() * 1000)})
+        time.sleep(pause_s)
+    store.write(f"ref/markets/date={d}/kalshi_series.jsonl.gz", _jsonl_gz(series))
     store.write(f"ref/markets/date={d}/poly.jsonl.gz", _jsonl_gz(poly))
     errors = sum("error" in r for r in kalshi + poly)
     return len(raw_pairs), len(kalshi), len(poly), errors, tbill

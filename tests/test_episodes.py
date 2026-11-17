@@ -24,7 +24,7 @@ from recorder.compact import BOOKS_SCHEMA, COVERAGE_SCHEMA, write_manifest  # no
 from recorder.store import LocalStore  # noqa: E402
 
 D = "2026-11-18"
-T = 1_795_046_400_000          # 2026-11-18 00:00:00 UTC
+T = 1_794_960_000_000          # 2026-11-18 00:00:00 UTC
 PAIR = {"pair_id": "P", "family": "fam", "rule_status": "read-close", "est_resolution": "2027-11-18",
         "kalshi_ticker": "K", "kalshi_question": "Will X?", "kalshi_fee_rate": 0.0,
         "poly_market_id": "1", "poly_question": "Will X?", "poly_yes_token": "Y", "poly_condition_id": "c",
@@ -171,12 +171,67 @@ class LiveEpisodesTest(unittest.TestCase):
         got = sorted((r["start_utc"][-2:], r["uncertain"]) for r in rows if r["basket"] == "P_YES+K_NO")
         self.assertEqual(got, [("01", False), ("03", True), ("05", False), ("07", True)])
 
-    def test_excess_return_over_tbill(self):
-        self.s.k(1000, **EDGE_KALSHI)
-        self.s.p(1000, **EDGE_POLY)
+    def test_start_metrics_capital_carry_and_excess(self):
+        self.s.k(1000, **EDGE_KALSHI)                 # Kalshi NO at 0.50 x 10 = $5.00
+        self.s.p(1000, **EDGE_POLY)                   # Polymarket YES at 0.40 x 10 = $4.00
+        self.s.p(3000, no=[(0.6, 20)])
         rows, _ = self.run_it()
         r = rows[0]
-        self.assertAlmostEqual(r["excess_annualized_pct"], round(r["peak_annualized_pct"] - 4.0, 1))
+        self.assertEqual((r["start_profit"], r["start_size"], r["start_capital"]), (1.0, 10.0, 9.0))
+        self.assertEqual((r["start_capital_kalshi"], r["start_capital_poly"]), (5.0, 4.0))
+        # Carry: Kalshi's 3.50% APY on the $5 Kalshi leg; no Polymarket holding rewards -> 5 * 3.5 / 9.
+        self.assertEqual(r["carry_pct"], round(5 * 3.5 / 9, 2))
+        # The total is computed from unrounded parts, so allow for the parts' rounding.
+        self.assertLessEqual(abs(r["start_total_annualized_pct"] - (r["start_annualized_pct"] + r["carry_pct"])), 0.15)
+        self.assertEqual(r["start_excess_pct"], round(r["start_total_annualized_pct"] - 4.0, 1))
+        self.assertFalse(r["est_resolution_passed"])
+
+    def test_capital_budgets(self):
+        self.s.k(1000, yes=[(0.5, 100_000)])
+        self.s.p(1000, no=[(0.6, 100_000)])          # $0.90 a pair, $0.10 edge, lots of depth
+        rows, _ = self.run_it()
+        r = rows[0]
+        self.assertAlmostEqual(r["size_1k"], (1000 - 0.01) / 0.9, places=1)
+        self.assertAlmostEqual(r["profit_1k"], r["size_1k"] * 0.1, places=1)
+        self.assertAlmostEqual(r["profit_50k"], (50_000 - 0.01) / 0.9 * 0.1, places=0)
+
+    def test_restart_split_is_one_opportunity(self):
+        self.s.k(1000, **EDGE_KALSHI)
+        self.s.p(1000, **EDGE_POLY)
+        self.s.cov(5000, "recorder", "stopped")
+        self.s.cov(65000, "recorder", "started")      # back within 120 s
+        self.s.k(66000, **EDGE_KALSHI)
+        self.s.p(66000, **EDGE_POLY)
+        self.s.p(70000, **NO_EDGE_POLY)
+        self.s.p(400_000, **EDGE_POLY)                # a separate opportunity much later
+        rows, _ = self.run_it()
+        ids = [r["opportunity_id"] for r in sorted(rows, key=lambda r: r["start_utc"])]
+        self.assertEqual(len(ids), 3)
+        self.assertEqual(ids[0], ids[1])
+        self.assertNotEqual(ids[1], ids[2])
+
+    def test_actionable_needs_rules_budget_excess_and_latency(self):
+        self.s.k(1000, yes=[(0.5, 100_000)])
+        self.s.p(1000, no=[(0.6, 100_000)])          # 11% return to a resolution a year out: beats the T-bill
+        self.s.p(10_000, no=[(0.6, 100_000)])
+        rows, _ = self.run_it()
+        r = rows[0]
+        self.assertTrue(r["actionable"])
+        self.assertGreater(r["profit_1000ms"], 0)
+        # Same opportunity, but the rules were only read on a sibling market: not actionable.
+        global PAIR
+        saved = PAIR
+        try:
+            PAIR = {**PAIR, "rule_status": "template-read"}
+            self.tearDown()
+            self.setUp()
+            self.s.k(1000, yes=[(0.5, 100_000)])
+            self.s.p(1000, no=[(0.6, 100_000)])
+            self.s.p(10_000, no=[(0.6, 100_000)])
+            rows, _ = self.run_it()
+            self.assertFalse(rows[0]["actionable"])
+        finally:
+            PAIR = saved
 
 
 class LegacyReproductionTest(unittest.TestCase):

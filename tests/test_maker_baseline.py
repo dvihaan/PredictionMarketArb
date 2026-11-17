@@ -23,7 +23,7 @@ from recorder.compact import BOOKS_SCHEMA, COVERAGE_SCHEMA, TRADES_SCHEMA, write
 from recorder.store import LocalStore  # noqa: E402
 
 D = "2026-11-18"
-T = 1_795_046_400_000
+T = 1_794_960_000_000          # 2026-11-18 00:00:00 UTC
 PAIR = {"pair_id": "P", "family": "fam", "rule_status": "read-close", "est_resolution": "2027-11-18",
         "kalshi_ticker": "K", "kalshi_question": "Will X?", "kalshi_fee_rate": 0.0, "kalshi_maker_fee_rate": 0.0,
         "poly_market_id": "1", "poly_question": "Will X?", "poly_yes_token": "Y", "poly_condition_id": "c",
