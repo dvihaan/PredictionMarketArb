@@ -5,6 +5,7 @@
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -268,6 +269,26 @@ class CompactTest(unittest.TestCase):
         self.assertEqual(k[0]["recv_ms"], T1 + 5000)
         p = self.trades("poly", D1)
         self.assertEqual([t["trade_id"] for t in p], ["p0", "p1"])       # sorted by time, no duplicate p1
+
+    def test_runs_in_same_window_are_read_in_order(self):
+        """Two recorder runs in one 5-minute window: the stopped run's rows come before the restarted run's,
+        also when the older file has the pre-2026-11-17 name without a run id."""
+        from recorder.compact import raw_keys
+        old = RawSink(self.tmp.name, window_s=300, host="ip-10-42-0-86", clock=lambda: T1 + 1000)
+        old.write("kalshi_ws", {"recv_ms": T1 + 1000, "raw": json.dumps(snap("K", [(0.40, 10)]))})
+        old.close_all()
+        # Rename the first file to the old naming scheme (no run id).
+        k_old = raw_keys(self.store, "kalshi_ws", D1)[0]
+        legacy = re.sub(r"-\d{13}\.jsonl\.gz$", ".jsonl.gz", k_old)
+        os.replace(os.path.join(self.tmp.name, *k_old.split("/")), os.path.join(self.tmp.name, *legacy.split("/")))
+        new = RawSink(self.tmp.name, window_s=300, host="ip-10-42-0-86", clock=lambda: T1 + 2000)
+        new.write("kalshi_ws", {"recv_ms": T1 + 2000, "raw": json.dumps(delta("K", "yes", 0.40, 5, T1 + 2000))})
+        new.close_all()
+        keys = raw_keys(self.store, "kalshi_ws", D1)
+        self.assertEqual(keys, [legacy, keys[1]])
+        self.run_day(D1)
+        self.assertEqual([x["source"] for x in self.books("kalshi", D1)], ["snapshot", "delta"])
+        self.assertEqual(self.books("kalshi", D1)[1]["yes_bids"], [{"price": 0.4, "size": 15.0}])
 
     def test_rerun_is_identical(self):
         r = self.raw

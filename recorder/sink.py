@@ -2,7 +2,12 @@
 
 Layout, relative to the output directory and to the S3 prefix alike:
 
-    raw/stream=<stream>/date=YYYY-MM-DD/hour=HH/<host>-<start_ms>.jsonl.gz
+    raw/stream=<stream>/date=YYYY-MM-DD/hour=HH/<host>-<start_ms>-<run_ms>.jsonl.gz
+
+start_ms is the 5-minute window; run_ms is when this recorder process started. The run part keeps a
+restart inside the same window from writing a file with the same name, which would overwrite the
+previous run's uploaded file in S3 (this happened on 2026-11-16/17 before run_ms existed; older files
+are named <host>-<start_ms>.jsonl.gz). Readers order files by (start_ms, run_ms).
 
 Streams: kalshi_ws, poly_ws (every WebSocket message as received), poly_rest (periodic REST
 books used for gap checks), trades (normalized REST trades), coverage (connects, disconnects,
@@ -28,19 +33,20 @@ def window_start(ms, window_s):
     return ms - ms % (int(window_s) * 1000)
 
 
-def raw_path(stream, start_ms, host):
+def raw_path(stream, start_ms, host, run_ms=None):
     t = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc)
-    return os.path.join("raw", f"stream={stream}", f"date={t:%Y-%m-%d}", f"hour={t:%H}",
-                        f"{host}-{start_ms}.jsonl.gz")
+    name = f"{host}-{start_ms}-{run_ms}.jsonl.gz" if run_ms is not None else f"{host}-{start_ms}.jsonl.gz"
+    return os.path.join("raw", f"stream={stream}", f"date={t:%Y-%m-%d}", f"hour={t:%H}", name)
 
 
 class RawSink:
-    def __init__(self, out_dir, window_s=300, flush_s=5.0, host=None, clock=None):
+    def __init__(self, out_dir, window_s=300, flush_s=5.0, host=None, clock=None, run_ms=None):
         self.out_dir = out_dir
         self.window_s = window_s
         self.flush_s = flush_s
         self.host = host or socket.gethostname().split(".")[0]
         self.clock = clock or (lambda: int(time.time() * 1000))
+        self.run_ms = run_ms if run_ms is not None else self.clock()    # this process's start: part of every name
         self.open = {}                 # stream -> (window_start_ms, relative path, gzip file, last flush time)
         self.lines = {}                # stream -> lines written since start, for heartbeats
 
@@ -52,10 +58,10 @@ class RawSink:
         if cur is None or cur[0] != start:
             if cur is not None:
                 self._close(stream)
-            rel = raw_path(stream, start, self.host)
+            rel = raw_path(stream, start, self.host, self.run_ms)
             full = os.path.join(self.out_dir, rel + PART)
             os.makedirs(os.path.dirname(full), exist_ok=True)
-            # Append mode: a restart inside the same window continues the same file as a new gzip member.
+            # Append mode is a safety net only: with run_ms in the name, each run writes its own files.
             cur = self.open[stream] = (start, rel, gzip.open(full, "ab"), time.monotonic())
         f = cur[2]
         f.write((json.dumps(record, separators=(",", ":")) + "\n").encode())

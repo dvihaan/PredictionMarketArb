@@ -35,8 +35,11 @@ class SinkTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_path_layout(self):
-        self.assertEqual(raw_path("kalshi_ws", T0, "h"),
-                         os.path.join("raw", "stream=kalshi_ws", "date=2026-11-16", "hour=15", f"h-{T0}.jsonl.gz"))
+        self.assertEqual(raw_path("kalshi_ws", T0, "h", T0 + 7),
+                         os.path.join("raw", "stream=kalshi_ws", "date=2026-11-16", "hour=15",
+                                      f"h-{T0}-{T0 + 7}.jsonl.gz"))
+        # Files written before run ids existed keep the old name.
+        self.assertTrue(raw_path("kalshi_ws", T0, "h").endswith(f"h-{T0}.jsonl.gz"))
 
     def test_open_file_is_part_until_closed(self):
         self.sink.write("poly_ws", {"recv_ms": T0, "raw": "x"})
@@ -82,16 +85,29 @@ class SinkTest(unittest.TestCase):
         self.assertEqual([r["i"] for r in rows], [0, 1, 2])
         f.fileobj.close()
 
-    def test_restart_in_same_window_appends(self):
-        self.sink.write("poly_ws", {"recv_ms": T0, "n": 1})
-        self.sink.close_all()
-        # A restarted recorder in the same window reopens the finished file's ".part" name.
-        rel = closed_files(self.dir)[0]
-        os.replace(os.path.join(self.dir, rel), os.path.join(self.dir, rel + PART))
+    def test_restart_in_same_window_never_reuses_an_uploaded_name(self):
+        """Regression (2026-11-17): a restart inside a 5-minute window wrote a file with the same name as the
+        previous run's, and its upload overwrote the previous run's file in S3, losing up to 5 minutes."""
+        uploaded = {}
+
+        def upload_and_delete():                 # what S3Uploader does: upload, then delete the local copy
+            for rel in closed_files(self.dir):
+                with open(os.path.join(self.dir, rel), "rb") as f:
+                    uploaded[rel] = f.read()
+                os.remove(os.path.join(self.dir, rel))
+
+        first = RawSink(self.dir, window_s=300, host="h", clock=self.clock, run_ms=T0)
+        first.write("poly_ws", {"recv_ms": T0, "n": 1})
+        first.close_all()
+        upload_and_delete()
+        self.clock.ms = T0 + 60_000              # restarted a minute later, same window
         again = RawSink(self.dir, window_s=300, host="h", clock=self.clock)
-        again.write("poly_ws", {"recv_ms": T0, "n": 2})
+        again.write("poly_ws", {"recv_ms": self.clock.ms, "n": 2})
         again.close_all()
-        self.assertEqual([r["n"] for r in read_lines(os.path.join(self.dir, rel))], [1, 2])
+        upload_and_delete()
+        self.assertEqual(len(uploaded), 2)       # two distinct names: nothing overwritten
+        rows = sorted((r["n"] for data in uploaded.values() for r in read_lines(data)))
+        self.assertEqual(rows, [1, 2])
 
     def test_read_tolerates_truncated_file(self):
         path = os.path.join(self.dir, "t.jsonl.gz")

@@ -78,10 +78,12 @@ def day_before(d):
 # ---- raw input ----------------------------------------------------------------------------------
 
 def raw_keys(store, stream, d):
-    """Raw files for one stream and day, in time order (file names are <host>-<window start ms>)."""
+    """Raw files for one stream and day, in time order. Names are <host>-<window ms>-<run ms>.jsonl.gz
+    (or <host>-<window ms>.jsonl.gz before run ms existed): ordered by window, then run, so a run that
+    restarted inside a window comes after the run that stopped."""
     def order(key):
-        m = re.search(r"/([^/]*)-(\d+)\.jsonl\.gz$", key)
-        return (int(m.group(2)), m.group(1)) if m else (0, key)
+        m = re.search(r"/([^/]*?)-(\d{13})(?:-(\d{13}))?\.jsonl\.gz$", key)
+        return (int(m.group(2)), int(m.group(3) or 0), m.group(1)) if m else (0, 0, key)
     return sorted((k for k in store.list(f"raw/stream={stream}/date={d}/") if k.endswith(".jsonl.gz")), key=order)
 
 
