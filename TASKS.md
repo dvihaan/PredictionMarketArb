@@ -145,7 +145,15 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
     - Reference snapshot now has `pairs.jsonl` and `tbill.json` (4.26%, 2026-11-16); 0 OOM kills
     - One Kalshi metadata fetch hit **HTTP 429** (rate limit, shared with the recorder's trade polling) → `fetch_market` now retries 429/5xx with backoff (1, 2, 4 s); tests added. Ships with the next update.
   - Glue columns for `suspect_levels` and trades `recv_ms` come with the 3.G template deploy
-- [ ] 3.B `analysis/data.py`: one DuckDB connection over local / s3 / https, with a local cache keyed on the manifest; `tools/query.py` becomes a wrapper
+- [x] 3.B `analysis/data.py`: `open_data(source, password, from_date, to_date)` → DuckDB views for every curated table in range, plus `.pairs(d)` and `.tbill(d)`
+  - Sources: local dir (read in place), `https://` + password (Bearer), `s3://` (AWS credentials)
+  - Remote files are cached under `~/.cache/prediction-market-arb/<host>/` and re-fetched only when the manifest's `bytes`/`modified` change
+  - `pairs(d)`: that day's snapshot → latest before → earliest after → `watchlist.json` (needed for the legacy Nov 9–12 days, which predate the snapshots); returns which one was used
+  - `tbill(d)`: same lookup; (None, None) if none stored yet
+  - `analysis/__init__.py` appends the package folder to `sys.path`, so Vihaan's unchanged `maker.py` (`from edge import …`) can be imported
+  - `tools/query.py` is now a thin wrapper (`--source`, `--cache`) and reports cache downloads
+  - Tests: `tests/test_data.py`, 8 tests (local views and dates, pairs/T-bill fallbacks, a real HTTP server with password: first run downloads, second downloads nothing, a changed file is re-fetched alone, range limits downloads, wrong password fails)
+  - Live: first run 32 files / 31 MB / 8.3 s; second run 0 downloads / 0.5 s. Live data shows `suspect_levels` (Nov 16: 5,626 rows; Nov 17: 6,143; 0 whole-book); legacy files without the column read fine (`union_by_name`).
 - [ ] 3.C `analysis/replay.py` + `analysis/episodes.py`
   - port of `analyze_stream.py` with `uncertain`, excess return over T-bill and latency sensitivity (50 ms / 250 ms / 1 s / 5 s)
   - **gate: reproduce Vihaan's `episodes.csv`** on the migrated Nov 9–12 data
