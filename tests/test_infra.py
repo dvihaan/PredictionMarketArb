@@ -118,6 +118,27 @@ class QueryPageTest(unittest.TestCase):
         self.assertEqual(json.loads(out.stdout), [], out.stderr)
 
 
+class AlarmDesignTest(unittest.TestCase):
+    """Stopped-metric alarms must fill missing periods with 0 (see the 2026-11-16 alarm test in TASKS.md)."""
+
+    def check(self, name, period, evaluations):
+        props = resources()[name]["Properties"]
+        self.assertNotIn("MetricName", props, "use metric math, not a plain metric")
+        expr = [m for m in props["Metrics"] if m.get("ReturnData")]
+        self.assertEqual(len(expr), 1)
+        self.assertEqual(expr[0]["Expression"].replace(" ", ""), "FILL(m1,0)")
+        stat = next(m for m in props["Metrics"] if m["Id"] == "m1")["MetricStat"]
+        self.assertEqual(stat["Period"], period)
+        self.assertEqual((props["EvaluationPeriods"], props["DatapointsToAlarm"]), (evaluations, evaluations))
+        self.assertEqual(props["ComparisonOperator"], "LessThanThreshold")
+
+    def test_recorder_down_fires_after_10_empty_minutes(self):
+        self.check("RecorderDownAlarm", 60, 10)
+
+    def test_nightly_missing_fires_after_26_empty_hours(self):
+        self.check("NightlyJobAlarm", 3600, 26)
+
+
 class FakeAthena:
     class exceptions:
         class InvalidRequestException(Exception):

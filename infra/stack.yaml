@@ -305,11 +305,22 @@ Resources:
     Properties:
       AlarmName: !Sub "${ProjectTag}-recorder-down"
       AlarmDescription: No heartbeat from the recorder for 10 minutes (process stopped or instance down).
-      Namespace: !Ref MetricsNamespace
-      MetricName: Heartbeat
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 2
+      # FILL(m1, 0) turns each minute without a heartbeat into a 0. Without it, CloudWatch keeps evaluating
+      # older real datapoints and ignores the missing ones: a plain 5-min x 2 alarm fired only after ~21 min
+      # in a test on 2026-11-16, while this design fired after 10.1 min.
+      Metrics:
+        - Id: m1
+          ReturnData: false
+          MetricStat:
+            Metric: {Namespace: !Ref MetricsNamespace, MetricName: Heartbeat}
+            Period: 60
+            Stat: Sum
+        - Id: heartbeat
+          Expression: FILL(m1, 0)
+          Label: Heartbeats per minute (missing = 0)
+          ReturnData: true
+      EvaluationPeriods: 10
+      DatapointsToAlarm: 10
       Threshold: 1
       ComparisonOperator: LessThanThreshold
       TreatMissingData: breaching
@@ -364,12 +375,22 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub "${ProjectTag}-nightly-job-missing"
-      AlarmDescription: The nightly processing job has not reported success in the last day. Expected once on the first day after deployment.
-      Namespace: !Ref MetricsNamespace
-      MetricName: NightlyOK
-      Statistic: Sum
-      Period: 86400
-      EvaluationPeriods: 1
+      AlarmDescription: The nightly processing job has not reported success in the last 26 hours (it runs daily at 00:30 UTC). Expected on the first day after deployment.
+      # Hourly buckets with missing hours filled as 0: fires only if none of the last 26 hours had a success.
+      # (Calendar-day buckets would fire every night between midnight and the 00:30 run.)
+      Metrics:
+        - Id: m1
+          ReturnData: false
+          MetricStat:
+            Metric: {Namespace: !Ref MetricsNamespace, MetricName: NightlyOK}
+            Period: 3600
+            Stat: Sum
+        - Id: nightly
+          Expression: FILL(m1, 0)
+          Label: Successful nightly runs per hour (missing = 0)
+          ReturnData: true
+      EvaluationPeriods: 26
+      DatapointsToAlarm: 26
       Threshold: 1
       ComparisonOperator: LessThanThreshold
       TreatMissingData: breaching

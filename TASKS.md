@@ -239,10 +239,17 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
   - **Finding: `recorder-down` did NOT fire within 18 min**; no email
     - Cause (documented by AWS): while ≥ EvaluationPeriods real datapoints remain in the alarm's look-back "evaluation range", CloudWatch evaluates those and *ignores* TreatMissingData=breaching. The size of that range isn't published, so heartbeat detection is late by an unknown amount.
     - `nightly-job-missing` has the same flaw once it has had a datapoint
-  - [ ] Fix (proposed, awaiting Binoy's OK to test). Candidates:
-    - (a) metric math `FILL(m1, 0)` with 1-min periods and 10 of 10
-    - (b) 1-min periods only
-    - Test both on a temporary alarm with a dummy metric (no recorder outage), adopt the reliable one for both alarms, delete the test resources
+  - [x] Experiment (Binoy OK'd, 2026-11-16): three temporary alarms (no actions) on a dummy metric in `PredictionMarketArb/AlarmTest`; 12 min of heartbeats, then stop at 22:46:08 UTC. Fired after:
+    - **A, `FILL(m1,0)` with 1-min periods, 10 of 10: 10.1 min**
+    - B, 1-min periods only: 15.6 min
+    - C, current 5-min × 2: 20.6 min (consistent with no alarm by the 18.4-min restart)
+    - Test alarms deleted (0 remain)
+    - A first attempt failed: zsh didn't word-split a `$TAGS` variable; the experiment was redone in Python
+  - [x] Fix in `infra/stack.yaml`:
+    - `recorder-down` uses design A
+    - `nightly-job-missing` uses FILL over **hourly** buckets, 26 of 26: it fires only if no success in the last 26 h (calendar-day buckets would fire nightly between midnight and the 00:30 run)
+    - Regression tests in `tests/test_infra.py` (AlarmDesignTest)
+  - [ ] Binoy runs `deploy.sh` (alarms only; the instance is not replaced)
   - [ ] Re-verify after the fix (method to be agreed; the dummy-metric test may be enough)
 - [x] 6.7 `infra/ops.sh` operations helper (Binoy asked how to check and toggle state from the CLI):
   - commands: `status`, `logs [recorder|nightly|refresh] [n]`, `stop|start|restart`, `refresh`, `alarms`, `test-alarm [name]` (set-alarm-state, no outage), `shell` (Session Manager)
@@ -295,6 +302,7 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-16 | Code reaches the server by `git clone` from the public GitHub repo (not an S3 bundle) | Binoy |
 | 2026-11-16 | Binoy copies the Kalshi key parameters to us-east-2 himself | Binoy |
 | 2026-11-16 | Add a **3-hourly refresh** of today's clean tables, on top of the nightly run | Binoy |
+| 2026-11-16 | Alarm test by real outage (accepted an ~18 min order-book gap); then test alarm fixes on a dummy metric, with no outage | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions
