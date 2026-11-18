@@ -240,7 +240,16 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
   - results side by side with Vihaan's baseline
   - [x] trade/book arrival order measured (Kalshi ±1 ms; Polymarket book first, 95% within 184 ms) → 2 s reconcile window
   - [x] tests (13): queue arithmetic both orders, cancel models, latency, stale fills, untimed trades, caps, gaps
-  - [ ] first results on Nov 16–17, reviewed with Binoy
+  - [x] first results, Nov 16–17 (28 h of live books; laptop run 10.5 min, 1.5 GB peak). Pessimistic, 1 s:
+    - 126 fills, 2,891 contracts, all hedged; $64.07 (baseline queue model: 73 fills, $44.87)
+    - realized edge 2.22 c per contract; 20.4%/yr on capital to resolution (T-bill ~4.3%)
+    - latency: 250 ms → 5 s cuts realized edge 2.25 → 1.74 c and doubles stale fills (14 → 25)
+    - pro-rata cancels: ~35% more fills, lower edge per contract, ~8% more profit
+    - mid moves ~0.2 c against us within 1 s of a fill (adverse selection), so far smaller than the edge
+    - Kalshi as maker earns nearly everything; Polymarket as maker gets 3–8 fills (smaller quoted edge; averaged and mostly untimed REST trades)
+    - concentrated: KXTIME-26-ZOH (hit its $1,000 cap) + KXOSCARDOCU-27-YOU (template-read) = ~73% of profit
+    - capital: ~$2.8k committed in 28 h and locked to resolution, so $55/day can't continue on a $10k cap: at ~20%/yr, $10k earns ~$5.50/day
+  - [ ] review with Binoy
 - [ ] 3.F `analysis/research.py`: `gaps` (per pair per changed second), `leadlag`, `stale`
 - [ ] 3.G Nightly analysis on EC2 after compaction
   - writes `curated/results/*` and Glue tables `pairs`, `episodes`, `maker_fills`, `gaps`, `leadlag`, `stale`
