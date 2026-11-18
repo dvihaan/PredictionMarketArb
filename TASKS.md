@@ -214,8 +214,29 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
     - **Marine Le Pen P_YES+K_NO:** $172.86 at start, $28.36 per $1k, 2.76¢; total 5.7% incl. carry = **+1.4 pts over the T-bill** (arbitrage alone ~2.2%: carry flips the verdict, as the review suspected)
     - Glucksmann +0.5; Time POY Mamdani +10.3
     - **142 opportunities excluded only because their pairs are `template-read`** (e.g. Oscars, +3.2 pts) → reading those rules is high-value (Stage 4 / Vihaan)
-  - [ ] Decide: add `poly_maker_rebate_share` (0.25 published) to the pairs file (needed by the 3.E rebates)
-- [ ] 3.E `analysis/maker_live.py`: queue tracking (`--cancel-model pessimistic|pro-rata`), hedge latency, markouts (1/10/60 s), position caps, Polymarket maker rebates (per-pair `poly_maker_rebate_share`)
+  - [x] ~~Add `poly_maker_rebate_share`~~ **Dropped** (Binoy, 2026-11-17): rebates and liquidity rewards are out of the maker model (see 3.E)
+- [x] 3.E.0 **Validations before 3.E** (Binoy: validate before deciding):
+  - **Rebates are real.** Official Polymarket docs (market details): `feeSchedule.rebateRate` = "fraction of taker fees rebated back to the resting maker", paid daily from a per-market pool. Liquidity rewards are a separate daily per-market program (quadratic score, sampled per minute). Neither matters for the taker hypothesis.
+  - **Polymarket fee change effective 2026-11-20 23:59 UTC** (official docs): Culture and non-election Politics 0.04/0.05 → 0.01; maker rebates become tiered 0–15%. Unclear whether this covers the international CLOB we record ("Polymarket DeFi on polymarket.com"). The daily snapshot's `feeSchedule.rate` will show it per market and the fee check will flag it → **pairs-file fee update will be needed (decision then)**.
+  - **NO-token prints, validated:**
+    - busy external market, 4 min: 226/226 YES-token trades printed on the YES-only connection
+    - our markets, all of Nov 17: YES-token trades 1,005/1,019 (98.6%) printed (tx hash); NO-token trades **352/352 never** printed to the YES-only feed
+    - our 57 pairs, 15 min with YES-only and NO-only connections: 14 YES trades printed only on YES; 1 NO trade printed only on NO
+  - **Root cause of the "18% timed":** prints were matched by *price*, but REST prices are averaged per taker order. **Matching by transaction hash** times ~74% of all Polymarket trades (98.6% of YES-token trades).
+  - Data API v1 has been retired (HTTP 410); v2 (used by the recorder) is fine
+- [ ] 3.E.1 Transaction-hash matching:
+  - keep `tx_hash` with Polymarket REST trades (raw `trades` stream, curated `trades` column)
+  - match prints by tx hash, with the price match only as a fallback for older raw files
+  - fee check: drop the rebate item
+  - recorder part ships with the next update
+- [ ] 3.E `analysis/maker_live.py` (scope confirmed by Binoy, 2026-11-17):
+  - joins the best bid only
+  - queue tracking (`--cancel-model pessimistic|pro-rata`)
+  - explicit hedge latency
+  - markouts at 1/10/60 s
+  - position caps per pair and in total
+  - **no rebates and no liquidity rewards** (stated in the results)
+  - results side by side with Vihaan's baseline
 - [ ] 3.F `analysis/research.py`: `gaps` (per pair per changed second), `leadlag`, `stale`
 - [ ] 3.G Nightly analysis on EC2 after compaction
   - writes `curated/results/*` and Glue tables `pairs`, `episodes`, `maker_fills`, `gaps`, `leadlag`, `stale`
@@ -429,6 +450,10 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-17 | Critically review the taker analysis and bring a list of proposed changes before 3.G | Binoy |
 | 2026-11-17 | Taker review adopted: A1 carry, A2 dates (amended: hand date + worst case), A3 capital per venue, B1 at-start headline, B2 capital budgets, B3 actionable (without stale), C1 rule status, D1 group restart splits, D2 fee cross-check. Not adopted: B4 stale-leg flag. | Binoy |
 | 2026-11-17 | A1 Kalshi APY kept in a dated rate file in the repo (no API); Polymarket holding-reward eligibility from the daily snapshot | Binoy |
+| 2026-11-17 | **Working principle (again):** validate claims with data before proposing decisions built on them | Binoy |
+| 2026-11-17 | Polymarket trade timing: transaction-hash matching only (~74% timed); no NO-token subscription for now | Binoy |
+| 2026-11-17 | Drop rebates and liquidity rewards from the maker model | Binoy |
+| 2026-11-17 | 3.E scope: join the best bid only; queue tracking, hedge latency, markouts, position caps | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions
