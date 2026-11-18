@@ -138,7 +138,9 @@ class LiveMakerTest(unittest.TestCase):
         self.assertEqual((fast["profit"], fast["realized_edge_c"]), (5.0, 10.0))     # hedged at 0.50 before the move
         self.assertEqual((slow["profit"], slow["realized_edge_c"]), (2.5, 5.0))      # hedged at 0.55 after it
         # Kalshi mid (0.40 + 0.45) / 2 = 0.425 at 1 s and 10 s; (0.38 + 0.45) / 2 = 0.415 at 60 s.
-        self.assertEqual((fast["markout_1s_c"], fast["markout_10s_c"], fast["markout_60s_c"]), (2.5, 2.5, 1.5))
+        self.assertEqual((fast["markout_0s_c"], fast["markout_1s_c"], fast["markout_10s_c"], fast["markout_60s_c"]),
+                         (2.5, 2.5, 2.5, 1.5))                               # the mid moved 1 c against us by 60 s
+        self.assertEqual(fast["rule_status"], "read-close")
 
     def test_cancel_takes_latency_to_land_and_stale_quote_is_hit(self):
         kalshi = [self.K0, book(30_000, "K", yes=[(0.40, 100)], no=[(0.55, 100)])]

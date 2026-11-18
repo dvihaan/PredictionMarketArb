@@ -23,7 +23,8 @@ Binoy, 2026-11-17; see TASKS.md):
       in total, separately in each run. Orders are sized to fit and fills are clipped at the cap. Capital stays
       committed until the market resolves: unwinding early is not modelled.
   Markouts. The maker venue's mid 1 s, 10 s and 60 s after each fill, minus our price, in cents per contract.
-      Negative means the market moved against the side we bought (adverse selection).
+      The mid at the fill itself is recorded too (markout_0s_c, about half the spread): the change from it to a
+      later markout is how far the market moved against (negative) or with the side we bought.
   No rebates and no liquidity rewards (Binoy, 2026-11-17): profit is fills and fees only.
 
 Trade timing: our receive time where known. A Polymarket trade without one (NO-token trades never print on the
@@ -55,7 +56,8 @@ KALSHI_MIN_ORDER = 1.0
 FIELDS = (["cancel_model", "latency_ms", "pair_id", "family", "maker_venue", "side", "placed_utc", "fill_utc",
            "trade_timed", "kind", "stale", "price", "size", "clipped", "queue_wait_s", "hedged", "hedge_status",
            "quoted_edge_c", "realized_edge_c", "profit", "capital", "annualized_pct"]
-          + [f"markout_{s}s_c" for s in MARKOUTS_S] + ["uncertain", "est_resolution", "kalshi_question"])
+          + [f"markout_{s}s_c" for s in (0,) + MARKOUTS_S] + ["uncertain", "rule_status", "est_resolution",
+                                                               "kalshi_question"])
 
 
 def _sql_str(s):
@@ -425,6 +427,7 @@ class LiveMaker:
         f.hedged = f.hedge_cost = f.hedge_fee = 0.0
         f.hedge_status, f.markouts = None, {}
         f.uncertain = row_uncertain(self.state.get(spec.m_key), spec.side, o.price)
+        self._markout(f, 0, True)              # the mid when the fill happened
         o.size -= qty
         w.commit(spec.pid, f.est)
         w.fills.append(f)
@@ -550,8 +553,9 @@ class LiveMaker:
                     profit=round(f.profit, 2), capital=round(f.capital, 2),
                     annualized_pct=None if ann is None else round(ann * 100, 1),
                     **{f"markout_{s}s_c": (round(f.markouts[s] * 100, 2) if s in f.markouts else None)
-                       for s in MARKOUTS_S},
-                    uncertain=f.uncertain, est_resolution=p["est_resolution"], kalshi_question=p["kalshi_question"]))
+                       for s in (0,) + MARKOUTS_S},
+                    uncertain=f.uncertain, rule_status=p.get("rule_status"), est_resolution=p["est_resolution"],
+                    kalshi_question=p["kalshi_question"]))
         rows.sort(key=lambda r: (r["cancel_model"], r["latency_ms"], r["fill_utc"]))
         return rows
 
@@ -577,21 +581,33 @@ def _stats(fills):
         st["quoted"] += f.quoted_edge * f.hedged
         st["profit"] += f.profit
         for s in MARKOUTS_S:
-            if s in f.markouts:
-                st[f"mk{s}"] += f.markouts[s] * f.size
+            if s in f.markouts and 0 in f.markouts:
+                st[f"mk{s}"] += (f.markouts[s] - f.markouts[0]) * f.size
                 st[f"mk{s}_n"] += f.size
+        if 0 in f.markouts:
+            st["half_spread"] += f.markouts[0] * f.size
+            st["half_spread_n"] += f.size
+        st["capital"] += f.capital
+        st["cap_days"] += f.capital * max(f.spec.resolve_ms - f.ms, 0) / 86400000
     return st
 
 
 def _line(label, quote_h, st, hours, peak=None, markouts=True):
+    """One results row. mk columns: how far the maker venue's mid moved from the fill to 1/10/60 s later, cents
+    per contract, positive = in favour of the side we bought. ann: profit / capital, annualized over the
+    capital-weighted time to resolution (the capital is locked until then)."""
     per_day = st["profit"] / hours * 24 if hours > 0 else 0.0
     q = f"{st['quoted'] / st['hedged'] * 100:8.2f}" if st["hedged"] > EPS else f"{'':8}"
     r = f"{st['profit'] / st['hedged'] * 100:9.2f}" if st["hedged"] > EPS else f"{'':9}"
     mk = "".join(f"{st[f'mk{s}'] / st[f'mk{s}_n'] * 100:8.2f}" if markouts and st[f"mk{s}_n"] > EPS else f"{'-':>8}"
                  for s in MARKOUTS_S)
     stale = f"{int(st['stale']):6d}" if markouts else f"{'-':>6}"
-    return (f"  {label:28}{quote_h:8.1f}{int(st['fills']):6d}{st['size']:10.0f}{st['hedged']:9.0f}{stale}"
-            f"{q}{r}{st['profit']:10.2f}{per_day:8.2f}{mk}" + (f"{peak:10.0f}" if peak is not None else ""))
+    ann = f"{'-':>7}"
+    if markouts and st["capital"] > EPS and st["cap_days"] > EPS:
+        ann = f"{st['profit'] / st['capital'] * 365 / (st['cap_days'] / st['capital']) * 100:7.1f}"
+    qh = f"{quote_h:8.1f}" if quote_h is not None else f"{'-':>8}"
+    return (f"  {label:28}{qh}{int(st['fills']):6d}{st['size']:10.0f}{st['hedged']:9.0f}{stale}"
+            f"{q}{r}{st['profit']:10.2f}{per_day:8.2f}{mk}{ann}" + (f"{peak:10.0f}" if peak is not None else ""))
 
 
 def summary(rows, m, baseline=None):
@@ -604,12 +620,17 @@ def summary(rows, m, baseline=None):
     if m.skipped_days:
         lines.append(f"Skipped (legacy polling data): {', '.join(m.skipped_days)}")
     head = (f"  {'':28}{'quote-h':>8}{'fills':>6}{'contracts':>10}{'hedged':>9}{'stale':>6}{'quoted c':>8}"
-            f"{'realized c':>9}{'profit $':>10}{'$/day':>8}" + "".join(f"{f'mk {s}s c':>8}" for s in MARKOUTS_S))
-    lines += ["", "== All models (realized c = profit per hedged contract; mk = markout, cents per contract; "
-                  "stale = filled while a cancel was landing)", head + f"{'peak $':>10}"]
+            f"{'realized c':>9}{'profit $':>10}{'$/day':>8}" + "".join(f"{f'mid {s}s':>8}" for s in MARKOUTS_S)
+            + f"{'ann %':>7}")
+    lines += ["", "== All models. realized c: profit per hedged contract. stale: filled while a cancel was landing.",
+              "   mid Ns: the maker venue's mid N s after the fill minus the mid at the fill, cents per contract",
+              "   (negative = moved against the side we bought). ann %: profit / capital over the capital-weighted",
+              "   time to resolution, annualized. $/day: profit over the covered hours; capital stays committed.",
+              head + f"{'peak $':>10}"]
     if baseline is not None:
         b_rows, b_stats, b = baseline
         b_hours = b.covered_ms / 3600000
+        lines.insert(1, f"Baseline (Vihaan's QuoteSim, unchanged) on the same days: {b_hours:.2f} h of books")
         for model in ("queue", "through"):
             st = collections.defaultdict(float)
             quote_h = 0.0
@@ -628,6 +649,21 @@ def summary(rows, m, baseline=None):
             fills = [f for f in w.fills if f.spec.maker_venue == venue]
             lines.append(_line(f"{w.cancel_model} {w.latency} ms, {venue}", w.quote_ms[venue] / 3600000,
                                _stats(fills), hours))
+    lines += ["", "== Live runs by the pair's rule status (template-read: rules assumed from a sibling market, "
+                  "not read)", head]
+    for w in m.worlds:
+        for status in sorted({f.spec.pair.get("rule_status") or "?" for f in w.fills}):
+            fills = [f for f in w.fills if (f.spec.pair.get("rule_status") or "?") == status]
+            lines.append(_line(f"{w.cancel_model} {w.latency} ms, {status}", None, _stats(fills), hours))
+    lines += ["", "== Live runs: most profitable pairs (share of the run's profit)"]
+    for w in m.worlds:
+        by_pair = collections.defaultdict(float)
+        for f in w.fills:
+            by_pair[f.spec.pid] += f.profit
+        total = sum(by_pair.values())
+        top = sorted(by_pair.items(), key=lambda kv: -kv[1])[:3]
+        lines.append(f"  {w.cancel_model} {w.latency} ms: " + ", ".join(
+            f"{pid} ${v:.2f}" + (f" ({v / total:.0%})" if total > EPS else "") for pid, v in top))
     lines += ["", "== Live runs: fill quality"]
     for w in m.worlds:
         st = _stats(w.fills)
