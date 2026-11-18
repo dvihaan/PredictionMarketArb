@@ -228,8 +228,18 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
   - [x] keep `tx_hash` with Polymarket REST trades (raw `trades` stream, curated `trades` column)
   - [x] match prints by tx hash, with the price match only as a fallback for rows without one
   - [x] fee check: drop the rebate item
-  - [ ] deploy with the next update (until then, new REST rows have no hash and use the price fallback)
-  - [ ] option for Binoy: re-fetch Nov 16 onward from the Data API (it serves full history, with hashes) so those days get hash timing too
+  - [x] deployed by Binoy 2026-11-18 (server on `662afe2`, recorder restarted 16:36 UTC); new raw rows verified: Polymarket rows carry the hash, Kalshi rows have none
+  - [~] re-fetch Nov 16 onward from the Data API (Binoy, 2026-11-18). Validating it first found:
+    - **the live poll misses about two thirds of Polymarket trades.** Re-fetch since Nov 16 19:00 UTC (recording start): 3,545 trades, of which only 1,217 are in raw. Curated Nov 17: 601 of 1,678. Every curated trade id is in the re-fetch (no id mismatch, so no double counting)
+    - cause: the Data API publishes trades late (recorded trades first seen p50 78 s, p90 130 s, p99 26 min after the trade); the poll re-reads only its last 60 s (`TRADE_LAG_MS`, unchanged from Vihaan's recorder), so later-published trades are never fetched. The loss is steady across every hour
+    - Kalshi is complete: a re-fetch of Nov 16–18 matches curated exactly (788 / 2,891 / 1,192 trades)
+    - compaction bug (mine, from 3.E.1): when one trade was stored without a hash and later with one, the old price-matched time could stick. Fixed: one row per trade id per day, the hashed row preferred; when only one of two rows has the hash, it decides time and hash (`merged_timing`). Tests 131 → 133
+    - unbiased delay probe (25 min, 40 trades): published p50 177 s, p90 255 s, max 301 s after the trade; only 22% within 60 s. Looks like batches about every 5 min
+    - fix (Binoy chose look-back + nightly re-fetch): the Polymarket poll re-reads the last 60 min (`POLY_LOOKBACK_MS`) and returns only trades it hasn't returned before (raw stays small); the nightly job runs `compact --refetch-poly`, which re-fetches the previous day first and, if that fails, still processes the day but withholds NightlyOK so the alarm emails
+    - `recorder/refetch.py`: writes a day's re-fetched trades to that day's raw partition (`hour=23/refetch-…`), so compaction times them against that day's prints
+    - tests 131 → 138 (compaction merge 2, re-fetch 3, poller 2)
+    - [ ] Binoy deploys; then on the server, under the compaction lock: re-fetch Nov 16–18, rebuild Nov 16–17 and today; check counts against the re-fetch
+    - [ ] re-run the live maker model on the complete trades
 - [~] 3.E `analysis/maker_live.py` (scope confirmed by Binoy, 2026-11-17; modelling decisions in the log; `python -m analysis.run maker-live`):
   - joins the best bid only
   - queue tracking (`--cancel-model pessimistic|pro-rata`)
@@ -472,6 +482,9 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-17 | 3.E partial fills: the unfilled remainder keeps its queue place (Vihaan requeued) | Binoy |
 | 2026-11-17 | 3.E caps: capital committed (both legs, fees, unhedged legs), $1k per pair, $10k total | Binoy |
 | 2026-11-17 | 3.E results at 250 ms, 1 s, 5 s latency x pessimistic / pro-rata cancels (6 runs), beside the baseline | Binoy |
+| 2026-11-18 | Re-fetch Polymarket trades from Nov 16 (with transaction hashes) | Binoy |
+| 2026-11-18 | Missed Polymarket trades: the live poll re-reads a longer window, and the nightly job re-fetches the previous day before building its tables | Binoy |
+| 2026-11-18 | Deploys: Claude commits, Binoy runs `infra/update.sh` | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions

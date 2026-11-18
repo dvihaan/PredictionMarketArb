@@ -12,6 +12,7 @@ ExecStart=/usr/bin/flock --wait 3600 /opt/pma/data/compact.lock \
   /opt/pma/venv/bin/python -u -m recorder.compact \
   --store s3://${PMA_BUCKET} \
   --pairs s3://${PMA_BUCKET}/ref/pairs/current.json \
+  --refetch-poly \
   --region ${AWS_REGION} \
   --metrics-namespace ${PMA_METRICS_NAMESPACE}
 # Run at low priority so the live recorder keeps the CPU it needs.

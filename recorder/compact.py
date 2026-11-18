@@ -4,6 +4,11 @@
     .venv/bin/python -m recorder.compact --store s3://<bucket> --date 2026-11-16
     .venv/bin/python -m recorder.compact --store data/raw-local --date 2026-11-16 --days 3
     .venv/bin/python -m recorder.compact --store s3://<bucket> --today        # 3-hourly refresh of today so far
+    .venv/bin/python -m recorder.compact --store s3://<bucket> --pairs <pairs file> --refetch-poly   # the nightly
+
+--refetch-poly first re-fetches each day's Polymarket trades into raw (recorder/refetch.py): the Data API
+publishes trades minutes late, so the live poll can miss some. A failed re-fetch still processes the day
+but skips the NightlyOK metric, so the nightly-job alarm emails.
 
 Reads raw/stream=*/date=D/ and writes, overwriting any earlier output for the same day:
 
@@ -375,12 +380,32 @@ def time_poly_trades(rows, prints):
 # ---- trades and coverage -----------------------------------------------------------------------
 
 def rest_trades(store, d):
-    out = defaultdict(list)
+    """The day's REST trade rows per venue, one per trade id. Polls overlap and re-fetches repeat trades,
+    so a trade can be in raw several times; a row with a transaction hash is kept over one without it,
+    so the hash decides the trade's timing and the row without it can't use up another trade's print."""
+    rows = {}
     for r in raw_records(store, "trades", d):
-        out[r["venue"]].append(dict(trade_id=r["trade_id"], market=r["market"], ts_ms=int(r["ts_ms"]),
-                                    yes_price=float(r["yes_price"]), size=float(r["size"]), taker=r["taker"],
-                                    source="rest", recv_ms=None, tx_hash=r.get("tx_hash")))
+        key = (r["venue"], r["trade_id"])
+        if key in rows and (rows[key]["tx_hash"] or not r.get("tx_hash")):
+            continue
+        rows[key] = dict(trade_id=r["trade_id"], market=r["market"], ts_ms=int(r["ts_ms"]),
+                         yes_price=float(r["yes_price"]), size=float(r["size"]), taker=r["taker"],
+                         source="rest", recv_ms=None, tx_hash=r.get("tx_hash"))
+    out = defaultdict(list)
+    for (venue, _), row in rows.items():
+        out[venue].append(row)
     return out
+
+
+def merged_timing(winner, other):
+    """recv_ms and tx_hash for two rows of one trade. When only one row has the transaction hash, that row
+    decides both: it was timed by its own print (or left untimed when there is none), while a row without
+    the hash may hold a price-matched time from another transaction. Otherwise a known value is kept
+    whichever row has it."""
+    hashed = [x for x in (winner, other) if x.get("tx_hash")]
+    if len(hashed) == 1:
+        return {"recv_ms": hashed[0].get("recv_ms"), "tx_hash": hashed[0]["tx_hash"]}
+    return {k: winner.get(k) if winner.get(k) is not None else other.get(k) for k in ("recv_ms", "tx_hash")}
 
 
 def upsert_trades(store, venue, rows):
@@ -398,13 +423,12 @@ def upsert_trades(store, venue, rows):
         for r in new:
             r = {**r, "recv_ms": r.get("recv_ms"), "tx_hash": r.get("tx_hash")}
             old = merged.get(r["trade_id"])
-            # REST rows win over WebSocket rows for the same trade; otherwise first seen wins.
-            # A known receive time and transaction hash are kept whichever row wins (WebSocket rows have the
-            # receive time, REST rows usually don't; rows recorded before the hash was kept don't have it).
+            # REST rows win over WebSocket rows for the same trade; otherwise first seen wins. Receive time
+            # and transaction hash come from merged_timing() (WebSocket rows have the receive time, REST rows
+            # usually don't; rows recorded before the hash was kept don't have it).
             winner = r if old is None or (r["source"] == "rest" and old["source"] != "rest") else old
             other = (old if winner is r else r) or {}
-            merged[r["trade_id"]] = {**winner, **{k: winner.get(k) if winner.get(k) is not None else other.get(k)
-                                                  for k in ("recv_ms", "tx_hash")}}
+            merged[r["trade_id"]] = {**winner, **merged_timing(winner, other)}
         rows_sorted = sorted(merged.values(), key=lambda r: (r["ts_ms"], r["trade_id"]))
         buf = io.BytesIO()
         pq.write_table(pa.Table.from_pylist(rows_sorted, schema=TRADES_SCHEMA), buf, compression="zstd")
@@ -504,7 +528,12 @@ def main(argv=None):
     ap.add_argument("--manifest-only", action="store_true", help="only rebuild curated/manifest.json")
     ap.add_argument("--today", action="store_true",
                     help="refresh today's tables so far (the 3-hourly refresh); never saves end-of-day books")
+    ap.add_argument("--refetch-poly", action="store_true",
+                    help="before processing each day, re-fetch its Polymarket trades into raw (needs --pairs): "
+                         "the live poll misses trades the Data API publishes late (recorder/refetch.py)")
     args = ap.parse_args(argv)
+    if args.refetch_poly and not args.pairs:
+        ap.error("--refetch-poly needs --pairs")
     if args.manifest_only:
         print(f"manifest: {write_manifest(open_store(args.store, args.region))}", flush=True)
         return 0
@@ -520,13 +549,29 @@ def main(argv=None):
                 else "T-bill rate NOT fetched (analysis falls back to the latest stored rate)")
         print(f"reference data {today}: {n_pairs} pairs, {n_k} Kalshi and {n_p} Polymarket markets, "
               f"{errors} fetch errors, {rate}", flush=True)
+    conditions, refetch_failed = None, []
+    if args.refetch_poly:
+        from recorder import pairs as pairs_mod
+        _, _, conditions = pairs_mod.markets(pairs_mod.load(args.pairs, args.region))
     for i in range(args.days - 1, -1, -1):
         d = (end - timedelta(days=i)).isoformat()
         if not has_raw(store, d):
             print(f"{d}: no raw data; skipped", flush=True)
             continue
+        if conditions is not None:
+            from recorder.refetch import refetch_poly
+            try:
+                refetch_poly(store, [d], conditions, log=lambda s: print(s, flush=True))
+            except Exception as e:   # the day is still worth processing with the trades recorded live
+                refetch_failed.append(d)
+                print(f"{d}: Polymarket trade re-fetch FAILED ({type(e).__name__}: {e}); processing with the "
+                      f"trades recorded live, which miss late-published ones", flush=True)
         process_day(store, d, log=lambda s: print(s, flush=True))
     print(f"manifest: {write_manifest(store)}", flush=True)
+    if refetch_failed:
+        # No NightlyOK, so the nightly-job alarm emails; re-run the night's job once the Data API answers.
+        print(f"re-fetch failed for {', '.join(refetch_failed)}: not reporting success", flush=True)
+        return 1
     if args.metrics_namespace:
         from recorder.metrics import Metrics
         Metrics(args.metrics_namespace, args.region).put({"NightlyOK": 1})
