@@ -454,6 +454,10 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-17 | Polymarket trade timing: transaction-hash matching only (~74% timed); no NO-token subscription for now | Binoy |
 | 2026-11-17 | Drop rebates and liquidity rewards from the maker model | Binoy |
 | 2026-11-17 | 3.E scope: join the best bid only; queue tracking, hedge latency, markouts, position caps | Binoy |
+| 2026-11-17 | 3.E latency: one round-trip latency for placing, cancelling and hedging (a cancel takes L to land, so stale quotes can be hit); replaces Vihaan's 10 s minimum rest | Binoy |
+| 2026-11-17 | 3.E partial fills: the unfilled remainder keeps its queue place (Vihaan requeued) | Binoy |
+| 2026-11-17 | 3.E caps: capital committed (both legs, fees, unhedged legs), $1k per pair, $10k total | Binoy |
+| 2026-11-17 | 3.E results at 250 ms, 1 s, 5 s latency x pessimistic / pro-rata cancels (6 runs), beside the baseline | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions
