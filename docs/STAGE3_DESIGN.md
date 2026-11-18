@@ -85,15 +85,25 @@ S3 curated/ + ref/  ──(DuckDB: local dir | s3:// | https + cache)──▶  
 ### 3.5 Maker simulation
 
 - **Legacy mode:** Vihaan's `QuoteSim` (`maker.py`), unchanged, driven by the replay. Used for the reproduction check.
-- **Live mode (`analysis/maker_live.py`, new):** same quoting policy (join the best bid when the hedged edge clears the hurdle), with:
-  - **Queue tracking.** On placement, `queue_ahead` = the displayed size at our price.
-    - A size decrease at our price that's explained by trades at that price consumes `queue_ahead` first.
-    - An unexplained decrease (a cancellation) follows `--cancel-model pessimistic|pro-rata`: either all behind us, or split in proportion.
-    - Trades at our price beyond `queue_ahead` fill us; trades through our price fill fully.
-  - **Hedge latency** `--hedge-latency-ms`: the hedge walks the other venue's book as it stood fill time + latency.
+- **Live mode (`analysis/maker_live.py`, new):** same quoting policy (four quotes per pair, each joining the best bid when the hedged edge at the top of both books clears the hurdle), with these changes (decided by Binoy, 2026-11-17):
+  - **Queue tracking.** A new order joins the back: everything displayed at its price when it reaches the venue is ahead of it.
+    - Trades at our price consume the queue ahead first, and the rest fills us. Trades through our price fill us fully.
+    - A size drop that no trade explains is a cancellation, handled by `--cancel-model pessimistic|pro-rata`: either all behind us, or split in proportion. Both are always reported.
+    - A drop waits up to `--reconcile-ms` (2,000) for its trade before it counts as a cancellation, because the two messages arrive in either order. Measured on Nov 16–17:
+      - Kalshi: the trade and its book drop arrive in the same millisecond 77% of the time; 95% are within ±1 ms.
+      - Polymarket: the book drop arrives first 85% of the time, median 20 ms earlier, 95% within 184 ms.
+      - Polymarket trades without a receive time are known only at the end of their second.
+  - **Latency** (`--latency`, runs at 250 ms, 1 s and 5 s): one round trip L for placing, cancelling and hedging.
+    - An order can be filled only by trades received at least L after we decided to place it.
+    - A cancel or reprice lands L later, so meanwhile the old order can still be hit; these fills are flagged `stale`.
+    - The hedge walks the other venue's book as it stood L after the fill.
+    - This replaces Vihaan's 10 s minimum rest.
+  - **Partial fills:** the remainder keeps its place in the queue.
   - **Markouts:** the maker venue's mid 1 s / 10 s / 60 s after each fill, relative to our price (adverse selection).
-  - **Position caps** per pair and in total; quoting pauses at the cap.
-  - **No rebates, no liquidity rewards** (Binoy, 2026-11-17): both are real Polymarket programs, but they are left out to keep the model to fees and fills; the results say so.
+  - **Position caps:** capital committed (both legs, fees, unhedged legs), $1,000 per pair and $10,000 in total per run. Orders are sized to fit; fills are clipped at the cap. Capital stays committed until resolution (no unwinding).
+  - **No rebates and no liquidity rewards.**
+  - **Gaps:** quotes are pulled when a book becomes unknown; a hedge or markout that falls in a gap is "unknown".
+  - **Known limitation:** Polymarket REST trades are one row per taker order, at the order's average price. A sweep through several levels can average above our bid and miss a fill it should have made, so Polymarket fills lean low. The per-fill WebSocket prints (YES-token trades only) could refine this later.
 
 ### 3.6 Research tables (`analysis/research.py`)
 

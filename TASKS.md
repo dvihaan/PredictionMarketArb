@@ -224,12 +224,13 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
     - our 57 pairs, 15 min with YES-only and NO-only connections: 14 YES trades printed only on YES; 1 NO trade printed only on NO
   - **Root cause of the "18% timed":** prints were matched by *price*, but REST prices are averaged per taker order. **Matching by transaction hash** times ~74% of all Polymarket trades (98.6% of YES-token trades).
   - Data API v1 has been retired (HTTP 410); v2 (used by the recorder) is fine
-- [ ] 3.E.1 Transaction-hash matching:
-  - keep `tx_hash` with Polymarket REST trades (raw `trades` stream, curated `trades` column)
-  - match prints by tx hash, with the price match only as a fallback for older raw files
-  - fee check: drop the rebate item
-  - recorder part ships with the next update
-- [ ] 3.E `analysis/maker_live.py` (scope confirmed by Binoy, 2026-11-17):
+- [~] 3.E.1 Transaction-hash matching (code done, `dc6fb22`; tests 118 → pass):
+  - [x] keep `tx_hash` with Polymarket REST trades (raw `trades` stream, curated `trades` column)
+  - [x] match prints by tx hash, with the price match only as a fallback for rows without one
+  - [x] fee check: drop the rebate item
+  - [ ] deploy with the next update (until then, new REST rows have no hash and use the price fallback)
+  - [ ] option for Binoy: re-fetch Nov 16 onward from the Data API (it serves full history, with hashes) so those days get hash timing too
+- [~] 3.E `analysis/maker_live.py` (scope confirmed by Binoy, 2026-11-17; modelling decisions in the log; `python -m analysis.run maker-live`):
   - joins the best bid only
   - queue tracking (`--cancel-model pessimistic|pro-rata`)
   - explicit hedge latency
@@ -237,9 +238,13 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
   - position caps per pair and in total
   - **no rebates and no liquidity rewards** (stated in the results)
   - results side by side with Vihaan's baseline
+  - [x] trade/book arrival order measured (Kalshi ±1 ms; Polymarket book first, 95% within 184 ms) → 2 s reconcile window
+  - [x] tests (13): queue arithmetic both orders, cancel models, latency, stale fills, untimed trades, caps, gaps
+  - [ ] first results on Nov 16–17, reviewed with Binoy
 - [ ] 3.F `analysis/research.py`: `gaps` (per pair per changed second), `leadlag`, `stale`
 - [ ] 3.G Nightly analysis on EC2 after compaction
   - writes `curated/results/*` and Glue tables `pairs`, `episodes`, `maker_fills`, `gaps`, `leadlag`, `stale`
+  - Glue: add the new columns `books.suspect_levels`, `trades.recv_ms`, `trades.tx_hash`
   - starter research queries on the query page
   - budget: compaction + analysis under ~15 min on the nano, no OOM
 - [ ] 3.H Daily report page `reports/D.html` + `index.html` (inline SVG charts) behind the password
