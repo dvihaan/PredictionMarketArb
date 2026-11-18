@@ -238,7 +238,9 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
     - fix (Binoy chose look-back + nightly re-fetch): the Polymarket poll re-reads the last 60 min (`POLY_LOOKBACK_MS`) and returns only trades it hasn't returned before (raw stays small); the nightly job runs `compact --refetch-poly`, which re-fetches the previous day first and, if that fails, still processes the day but withholds NightlyOK so the alarm emails
     - `recorder/refetch.py`: writes a day's re-fetched trades to that day's raw partition (`hour=23/refetch-…`), so compaction times them against that day's prints
     - tests 131 → 138 (compaction merge 2, re-fetch 3, poller 2)
-    - [ ] Binoy deploys; then on the server, under the compaction lock: re-fetch Nov 16–18, rebuild Nov 16–17 and today; check counts against the re-fetch
+    - [x] Binoy deployed `4b7579f` (2026-11-18 17:23 UTC). On the server, under the compaction lock (`pma-backfill`, ~10 min CPU): re-fetched Nov 16–18 (1,773 / 1,678 / 1,338 trades), rebuilt Nov 16–17 and today (today's Polymarket trades table started empty first)
+    - [x] checked: every Polymarket trade from Nov 16 00:00 to the fetch (4,789) is stored, all with a hash, no duplicates. The live poll since the restart caught 43 of 43, none written twice
+    - receive times since recording began, by token: YES-token trades 83% (Nov 16, first hours), 98.9% (Nov 17), 100% (Nov 18); NO-token trades 0% (not subscribed). NO-token trades are 25% of Nov 17's trades and 49% of Nov 18's, so overall 74% and 51% are timed
     - [ ] re-run the live maker model on the complete trades
 - [~] 3.E `analysis/maker_live.py` (scope confirmed by Binoy, 2026-11-17; modelling decisions in the log; `python -m analysis.run maker-live`):
   - joins the best bid only
@@ -259,7 +261,14 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` blo
     - Kalshi as maker earns nearly everything; Polymarket as maker gets 3–8 fills (smaller quoted edge; averaged and mostly untimed REST trades)
     - concentrated: KXTIME-26-ZOH (hit its $1,000 cap) + KXOSCARDOCU-27-YOU (template-read) = ~73% of profit
     - capital: ~$2.8k committed in 28 h and locked to resolution, so $55/day can't continue on a $10k cap: at ~20%/yr, $10k earns ~$5.50/day
-  - [ ] review with Binoy
+  - [x] reviewed with Binoy (2026-11-18): headline now read-close pairs only (baseline and live), template-read pairs on their own lines, then all pairs; top pairs mark non-read-close with *. Test added (14)
+  - [x] re-run on complete Polymarket trades (2026-11-18; same days, 9,083 trades applied, was 7,672). Pessimistic, 1 s:
+    - **headline (read-close pairs): 99 fills, 2,244 contracts, 1.72 c per contract, $38.60, 23.3%/yr** (baseline queue model, same pairs: 61 fills, $33.33)
+    - template-read pairs: 45 fills, $28.93, 15.7%/yr, of which KXOSCARDOCU-27-YOU $21.18
+    - all pairs: 144 fills, $67.52, 19.3%/yr (was $64.07 before the re-fetch); baseline queue 79 fills, $47.04 (was $44.87)
+    - Polymarket as maker: 3 → 21 fills, $0.49 → $3.95, 0.39 c per contract, 9.7%/yr. Still small: quotes resting on Polymarket have thin quoted edges (0.7 c). Kalshi as maker barely changes ($63.57)
+    - the headline is concentrated: KXTIME-26-ZOH is $25.69 of the $38.60 (67%), and it hit its $1,000 cap
+    - latency still matters most: read-close realized edge 1.75 c at 250 ms, 1.13 c at 5 s
 - [ ] 3.F `analysis/research.py`: `gaps` (per pair per changed second), `leadlag`, `stale`
 - [ ] 3.G Nightly analysis on EC2 after compaction
   - writes `curated/results/*` and Glue tables `pairs`, `episodes`, `maker_fills`, `gaps`, `leadlag`, `stale`
@@ -485,6 +494,7 @@ Goal: a **separate agent** that periodically compares Kalshi and Polymarket and 
 | 2026-11-18 | Re-fetch Polymarket trades from Nov 16 (with transaction hashes) | Binoy |
 | 2026-11-18 | Missed Polymarket trades: the live poll re-reads a longer window, and the nightly job re-fetches the previous day before building its tables | Binoy |
 | 2026-11-18 | Deploys: Claude commits, Binoy runs `infra/update.sh` | Binoy |
+| 2026-11-18 | Maker headline: read-close pairs only, as the taker "actionable"; template-read pairs shown separately as unverified rules | Binoy |
 | 2026-11-16 | Expand Stage 4 into a separate, periodic pair-discovery agent (design questions in 4.0) | Binoy |
 
 ## Open questions

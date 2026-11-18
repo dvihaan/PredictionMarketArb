@@ -98,10 +98,10 @@ def cov(ms, event, venue="recorder"):
 
 
 class LiveMakerTest(unittest.TestCase):
-    def run_case(self, kalshi, poly, trades, coverage=(), **kw):
+    def run_case(self, kalshi, poly, trades, coverage=(), pair=PAIR, **kw):
         with tempfile.TemporaryDirectory() as root:
             store = LocalStore(root)
-            store.write(f"ref/pairs/date={D}/pairs.json", json.dumps({"pairs": [PAIR]}).encode())
+            store.write(f"ref/pairs/date={D}/pairs.json", json.dumps({"pairs": [pair]}).encode())
             write(store, f"curated/books/venue=kalshi/date={D}/part-0.parquet", kalshi, BOOKS_SCHEMA)
             write(store, f"curated/books/venue=poly/date={D}/part-0.parquet", poly, BOOKS_SCHEMA)
             write(store, f"curated/coverage/date={D}/part-0.parquet", [cov(0, "started"), *coverage], COVERAGE_SCHEMA)
@@ -205,6 +205,26 @@ class LiveMakerTest(unittest.TestCase):
         rows, m = self.run_case(kalshi, poly, trades, coverage=[cov(22_000, "stopped"), cov(40_000, "started")],
                                 latencies=[5000])
         self.assertEqual(m.covered_ms, 0)                  # one tick before the stop, one after: the gap isn't covered
+
+    def test_headline_counts_read_close_pairs_only(self):
+        kalshi = [self.K0, book(45_000, "K", yes=[(0.40, 100)], no=[(0.55, 100)])]
+        poly = [self.P0, book(45_000, "Y", yes=[(0.50, 500)])]
+        trades = [("kalshi", trade("t1", 21_000, "K", 0.40, 150))]
+
+        def fills_by_section(pair):
+            rows, m = self.run_case(kalshi, poly, trades, pair=pair, latencies=[250])
+            got, section = {}, None
+            for line in summary(rows, m):
+                if line.startswith("== "):
+                    section = line.split(":")[0]
+                elif line.strip().startswith("live pessimistic 250 ms") and section not in got:
+                    got[section] = int(line[2 + 28 + 8:2 + 28 + 8 + 6])
+            return got
+
+        self.assertEqual(fills_by_section(PAIR),
+                         {"== HEADLINE": 1, "== Not in the headline": 0, "== All pairs, all models": 1})
+        self.assertEqual(fills_by_section({**PAIR, "rule_status": "template-read"}),
+                         {"== HEADLINE": 0, "== Not in the headline": 1, "== All pairs, all models": 1})
 
 
 if __name__ == "__main__":

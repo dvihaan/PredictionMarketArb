@@ -610,6 +610,13 @@ def _line(label, quote_h, st, hours, peak=None, markouts=True):
             f"{q}{r}{st['profit']:10.2f}{per_day:8.2f}{mk}{ann}" + (f"{peak:10.0f}" if peak is not None else ""))
 
 
+HEADLINE_STATUS = "read-close"
+
+
+def _rule_status(pair):
+    return pair.get("rule_status") or "?"
+
+
 def summary(rows, m, baseline=None):
     """Live runs side by side with Vihaan's baseline (maker_baseline.summary's stats), same days."""
     hours = m.covered_ms / 3600000
@@ -622,15 +629,43 @@ def summary(rows, m, baseline=None):
     head = (f"  {'':28}{'quote-h':>8}{'fills':>6}{'contracts':>10}{'hedged':>9}{'stale':>6}{'quoted c':>8}"
             f"{'realized c':>9}{'profit $':>10}{'$/day':>8}" + "".join(f"{f'mid {s}s':>8}" for s in MARKOUTS_S)
             + f"{'ann %':>7}")
-    lines += ["", "== All models. realized c: profit per hedged contract. stale: filled while a cancel was landing.",
-              "   mid Ns: the maker venue's mid N s after the fill minus the mid at the fill, cents per contract",
-              "   (negative = moved against the side we bought). ann %: profit / capital over the capital-weighted",
-              "   time to resolution, annualized. $/day: profit over the covered hours; capital stays committed.",
-              head + f"{'peak $':>10}"]
+    lines += ["", "realized c: profit per hedged contract. stale: filled while a cancel was landing.",
+              "mid Ns: the maker venue's mid N s after the fill minus the mid at the fill, cents per contract",
+              "(negative = moved against the side we bought). ann %: profit / capital over the capital-weighted",
+              "time to resolution, annualized. $/day: profit over the covered hours; capital stays committed."]
+    b_rows = b_stats = b = None
+    b_hours = 0.0
     if baseline is not None:
         b_rows, b_stats, b = baseline
         b_hours = b.covered_ms / 3600000
         lines.insert(1, f"Baseline (Vihaan's QuoteSim, unchanged) on the same days: {b_hours:.2f} h of books")
+
+    def by_status(title, keep):
+        """Rows for the pairs whose rule status passes keep (quote hours aren't split by status)."""
+        out = ["", title, head]
+        if b is not None:
+            for model in ("queue", "through"):
+                st = collections.defaultdict(float)
+                for r in b_rows:
+                    if r["model"] == model and keep(_rule_status(b.by_pair[r["pair_id"]])):
+                        st["fills"] += 1
+                        st["size"] += r["size"]
+                        st["hedged"] += r["hedged"]
+                        st["quoted"] += r["quoted_edge_c"] / 100 * r["hedged"]
+                        st["profit"] += r["profit"]
+                out.append(_line(f"baseline {model} (Vihaan)", None, st, b_hours, markouts=False))
+        for w in m.worlds:
+            out.append(_line(f"live {w.cancel_model} {w.latency} ms", None,
+                             _stats([f for f in w.fills if keep(_rule_status(f.spec.pair))]), hours))
+        return out
+
+    # Headline: read-close pairs only, as the taker results' "actionable" (docs/TAKER_REVIEW.md C1; Binoy, 2026-11-18).
+    lines += by_status(f"== HEADLINE: {HEADLINE_STATUS} pairs only (rules read on both venues)",
+                       lambda s: s == HEADLINE_STATUS)
+    lines += by_status(f"== Not in the headline: other pairs (template-read: rules assumed from a sibling market, "
+                       f"not read; the hedge may not hold)", lambda s: s != HEADLINE_STATUS)
+    lines += ["", "== All pairs, all models", head + f"{'peak $':>10}"]
+    if b is not None:
         for model in ("queue", "through"):
             st = collections.defaultdict(float)
             quote_h = 0.0
@@ -649,21 +684,18 @@ def summary(rows, m, baseline=None):
             fills = [f for f in w.fills if f.spec.maker_venue == venue]
             lines.append(_line(f"{w.cancel_model} {w.latency} ms, {venue}", w.quote_ms[venue] / 3600000,
                                _stats(fills), hours))
-    lines += ["", "== Live runs by the pair's rule status (template-read: rules assumed from a sibling market, "
-                  "not read)", head]
-    for w in m.worlds:
-        for status in sorted({f.spec.pair.get("rule_status") or "?" for f in w.fills}):
-            fills = [f for f in w.fills if (f.spec.pair.get("rule_status") or "?") == status]
-            lines.append(_line(f"{w.cancel_model} {w.latency} ms, {status}", None, _stats(fills), hours))
-    lines += ["", "== Live runs: most profitable pairs (share of the run's profit)"]
+    lines += ["", "== Live runs: most profitable pairs (share of the run's profit; * = not read-close)"]
     for w in m.worlds:
         by_pair = collections.defaultdict(float)
+        status = {}
         for f in w.fills:
             by_pair[f.spec.pid] += f.profit
+            status[f.spec.pid] = _rule_status(f.spec.pair)
         total = sum(by_pair.values())
         top = sorted(by_pair.items(), key=lambda kv: -kv[1])[:3]
         lines.append(f"  {w.cancel_model} {w.latency} ms: " + ", ".join(
-            f"{pid} ${v:.2f}" + (f" ({v / total:.0%})" if total > EPS else "") for pid, v in top))
+            f"{pid}{'' if status[pid] == HEADLINE_STATUS else '*'} ${v:.2f}"
+            + (f" ({v / total:.0%})" if total > EPS else "") for pid, v in top))
     lines += ["", "== Live runs: fill quality"]
     for w in m.worlds:
         st = _stats(w.fills)
