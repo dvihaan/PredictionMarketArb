@@ -1,9 +1,11 @@
-"""REST trade fetchers for both venues, moved unchanged from Vihaan's original recorder (deprecated/record.py).
+"""REST trade fetchers for both venues, from Vihaan's original recorder (deprecated/record.py).
 
 Both venues publish full trade history, so these can backfill any period:
   kalshi_trades(session, ticker, since_ms, stop)        -> rows for one Kalshi market
   poly_trades(session, by_condition, since_ms, stop)    -> rows for up to 20 Polymarket markets
-Each row is (venue, trade_id, market, ts_ms, yes_price, size, taker), in YES terms.
+Each row is (venue, trade_id, market, ts_ms, yes_price, size, taker, tx_hash), in YES terms.
+tx_hash is the Polymarket settlement transaction (None for Kalshi). Compaction uses it to find the
+WebSocket print of the same trade, which gives our receive time (the one change from Vihaan's version).
 """
 import calendar
 import hashlib
@@ -53,7 +55,7 @@ def kalshi_trades(session, ticker, since_ms, stop):
             ts = iso_ms(t["created_time"])
             book_side = t.get("taker_book_side") or {"yes": "bid", "no": "ask"}[t["taker_side"]]
             rows.append(("kalshi", t["trade_id"], ticker, ts, float(t["yes_price_dollars"]), float(t["count_fp"]),
-                         "buy_yes" if book_side == "bid" else "sell_yes"))
+                         "buy_yes" if book_side == "bid" else "sell_yes", None))
         cursor = data.get("cursor")
         if not cursor or stop.is_set():
             return rows
@@ -85,7 +87,7 @@ def poly_trades(session, by_condition, since_ms, stop):
             raw = "|".join(str(t[k]) for k in ("transaction_hash", "token_id", "side", "price", "size", "proxy_wallet"))
             rows.append(("poly", hashlib.sha1(raw.encode()).hexdigest()[:24], yes_token, ts,
                          round(price if is_yes else 1 - price, 6), float(t["size"]),
-                         "buy_yes" if buys_yes else "sell_yes"))
+                         "buy_yes" if buys_yes else "sell_yes", t.get("transaction_hash")))
         pg = data.get("pagination") or {}
         cursor = pg.get("next_cursor")
         reached = page and int(page[-1]["timestamp"]) * 1000 < since_ms

@@ -220,20 +220,63 @@ class CompactTest(unittest.TestCase):
         rows = self.books("poly", D1)
         self.assertEqual([(x["suspect"], x["suspect_levels"]) for x in rows], [(True, None), (True, None)])
 
-    def test_poly_rest_trade_timed_by_matching_print(self):
+    def print_(self, ms, tok, price, ts, tx):
+        self.raw.poly(ms, {"event_type": "last_trade_price", "asset_id": tok, "market": "m", "price": str(price),
+                           "size": "3", "side": "SELL", "timestamp": str(ts), "transaction_hash": tx})
+
+    def test_poly_rest_trade_timed_by_transaction_hash(self):
         r = self.raw
         r.poly(T1 + 1000, [pbook("Y", [(0.5, 100)], [], T1)])
-        r.poly(T1 + 5047, {"event_type": "last_trade_price", "asset_id": "Y", "market": "m", "price": "0.5",
-                           "size": "3", "side": "SELL", "timestamp": str(T1 + 5000), "transaction_hash": "0xab"})
+        self.print_(T1 + 5047, "Y", 0.51, T1 + 5000, "0xab")      # one transaction, two fills, two prints
+        self.print_(T1 + 5049, "Y", 0.50, T1 + 5000, "0xab")
+        self.print_(T1 + 7010, "Z", 0.30, T1 + 7000, "0xcd")      # another market's token
+        self.print_(T1 + 9020, "Y", 0.48, T1 + 9000, "0xee")
+        trade = dict(venue="poly", market="Y", size=1.0, taker="sell_yes")
+        r.trade(T1 + 60_000, trade_id="p1", ts_ms=T1 + 5000, yes_price=0.505, tx_hash="0xab", **trade)  # averaged
+        r.trade(T1 + 60_000, trade_id="p2", ts_ms=T1 + 5000, yes_price=0.50, tx_hash="0xab", **trade)   # same tx
+        r.trade(T1 + 60_000, trade_id="p3", ts_ms=T1 + 7000, yes_price=0.70, tx_hash="0xcd", **trade)   # not on Y
+        # Same price and second as a print, but a different transaction (e.g. a NO-token trade): no time, and
+        # no price fallback for a row that has a hash.
+        r.trade(T1 + 60_000, trade_id="p4", ts_ms=T1 + 9000, yes_price=0.48, tx_hash="0xff", **trade)
+        r.close()
+        self.run_day(D1)
+        got = {t["trade_id"]: (t["recv_ms"], t["tx_hash"]) for t in self.trades("poly", D1)}
+        self.assertEqual(got, {"p1": (T1 + 5047, "0xab"), "p2": (T1 + 5047, "0xab"),
+                               "p3": (None, "0xcd"), "p4": (None, "0xff")})
+        self.assertIn("timed by a print: 2 of 4)", self.logs[-1])
+
+    def test_poly_rest_trade_without_hash_falls_back_to_price(self):
+        """REST rows recorded before tx_hash was kept: same token and YES price within 2 s, each print once."""
+        r = self.raw
+        r.poly(T1 + 1000, [pbook("Y", [(0.5, 100)], [], T1)])
+        self.print_(T1 + 5047, "Y", 0.5, T1 + 5000, "0xab")
         r.trade(T1 + 60_000, venue="poly", trade_id="p1", market="Y", ts_ms=T1 + 5000, yes_price=0.5, size=3.0,
                 taker="sell_yes")
         r.trade(T1 + 60_000, venue="poly", trade_id="p2", market="Y", ts_ms=T1 + 9000, yes_price=0.48, size=1.0,
                 taker="sell_yes")                                            # no print at this price
+        r.trade(T1 + 60_000, venue="poly", trade_id="p3", market="Y", ts_ms=T1 + 5000, yes_price=0.5, size=1.0,
+                taker="sell_yes")                                            # the only print is already used
         r.close()
         self.run_day(D1)
-        got = {t["trade_id"]: t["recv_ms"] for t in self.trades("poly", D1)}
-        self.assertEqual(got, {"p1": T1 + 5047, "p2": None})
-        self.assertIn("timed by a print: 1 of 2", self.logs[-1])
+        got = {t["trade_id"]: (t["recv_ms"], t["tx_hash"]) for t in self.trades("poly", D1)}
+        self.assertEqual(got, {"p1": (T1 + 5047, None), "p2": (None, None), "p3": (None, None)})
+        self.assertIn("timed by a print: 1 of 3, 1 by the price fallback", self.logs[-1])
+
+    def test_rerecorded_trade_keeps_hash_and_time(self):
+        """The same trade recorded without a hash (older recorder) and later with one keeps both fields."""
+        r = self.raw
+        r.poly(T1 + 1000, [pbook("Y", [(0.5, 100)], [], T1)])
+        self.print_(T1 + 5047, "Y", 0.5, T1 + 5000, "0xab")
+        r.trade(T1 + 60_000, venue="poly", trade_id="p1", market="Y", ts_ms=T1 + 5000, yes_price=0.5, size=3.0,
+                taker="sell_yes")
+        r.close()
+        self.run_day(D1)
+        r.trade(T1 + 120_000, venue="poly", trade_id="p1", market="Y", ts_ms=T1 + 5000, yes_price=0.5, size=3.0,
+                taker="sell_yes", tx_hash="0xab")
+        r.close()
+        self.run_day(D1)
+        self.assertEqual([(t["trade_id"], t["recv_ms"], t["tx_hash"]) for t in self.trades("poly", D1)],
+                         [("p1", T1 + 5047, "0xab")])
 
     def test_poly_no_entries_are_ignored(self):
         r = self.raw

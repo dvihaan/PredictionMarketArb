@@ -23,7 +23,7 @@ short-lived or stale quotes.
 | SQL additions | `pairs` and results tables, starter research queries, and extra research tables (below) |
 | Correctness | **Reproduce the legacy results** on the migrated Nov 9–12 data |
 | Maker simulation | **Improve now**, as a new model next to the unchanged `maker.py` (kept as the "legacy" mode) |
-| Maker improvements | Queue tracking; hedge latency; markouts; position caps and rebates |
+| Maker improvements | Queue tracking; hedge latency; markouts; position caps (rebates and liquidity rewards dropped, 2026-11-17) |
 | Research additions | Latency sensitivity; gap time series; lead-lag and stale quotes; daily report page |
 | Fees | Per-pair rates from that day's pairs file (no separate schedule) |
 
@@ -54,7 +54,7 @@ S3 curated/ + ref/  ──(DuckDB: local dir | s3:// | https + cache)──▶  
   This matters because late trades can update past trade partitions.
 - **Trades with receive time.** Curated trades gain a nullable `recv_ms`.
   - Kalshi WebSocket trades are recorded live and get it.
-  - Polymarket `last_trade_price` WebSocket events (already in the raw files) are extracted as trade prints with `recv_ms`, matched to REST trades by transaction hash where possible.
+  - Polymarket `last_trade_price` WebSocket events (already in the raw files) are extracted as trade prints with `recv_ms`, matched to REST trades by transaction hash (decided 2026-11-17). REST rows recorded before the recorder kept the hash fall back to a price match.
   - REST-only trades fall back to server time. Their timestamps are second-resolution, so the maker model allows for that.
 - **Pairs as a table.** `ref/pairs/date=D/pairs.jsonl`, one pair per line, for a Glue `pairs` table.
 - **T-bill rate.** `ref/rates/date=D/tbill.json` with the daily 3-month bill yield from the US Treasury's public data. The exact endpoint will be confirmed in implementation. A missing day falls back to the latest known rate, and the report says so.
@@ -93,7 +93,7 @@ S3 curated/ + ref/  ──(DuckDB: local dir | s3:// | https + cache)──▶  
   - **Hedge latency** `--hedge-latency-ms`: the hedge walks the other venue's book as it stood fill time + latency.
   - **Markouts:** the maker venue's mid 1 s / 10 s / 60 s after each fill, relative to our price (adverse selection).
   - **Position caps** per pair and in total; quoting pauses at the cap.
-  - **Rebates:** Polymarket maker rebate share per pair from the pairs file (`poly_maker_rebate_share`, default 0, consistent with "per-pair rates only").
+  - **No rebates, no liquidity rewards** (Binoy, 2026-11-17): both are real Polymarket programs, but they are left out to keep the model to fees and fills; the results say so.
 
 ### 3.6 Research tables (`analysis/research.py`)
 
@@ -144,7 +144,7 @@ writes CSV and Parquet locally. Once the port reproduces the legacy results, the
 
 ## 5. Risks and unknowns
 
-- **Polymarket trade timing:** REST trades have one-second timestamps, and it's unconfirmed whether `last_trade_price` events cover NO-token trades. This may limit Polymarket queue-tracking precision; the docs and results will say so.
+- **Polymarket trade timing (validated 2026-11-17):** REST trades have one-second timestamps. `last_trade_price` prints on our YES-only subscription cover YES-token trades (98.6% matched by transaction hash on Nov 17) but never NO-token trades (0 of 352). Matched by hash, ~74% of Polymarket trades get a receive time. The rest are timed at the end of their second, which limits Polymarket queue-tracking precision; the results say so. Subscribing to NO tokens would close the gap (left for later).
 - **Nightly CPU and memory:** analysis adds to compaction on a 0.5 GB instance. If the budget is exceeded, the options are writing outputs to disk instead of memory, running analysis at a different hour, or a larger instance (a decision for Binoy).
 - **Repair rate rising** (~31 → ~77 an hour): if it keeps rising, more data becomes "uncertain". The per-level markers limit the damage, and the report tracks the rate.
 
@@ -154,7 +154,7 @@ writes CSV and Parquet locally. Once the port reproduces the legacy results, the
 2. **3.B** Data access + cache
 3. **3.C** Replay engine + episodes port + **legacy episode reproduction**
 4. **3.D** Legacy maker mode + **legacy maker reproduction**
-5. **3.E** Live maker model (queue tracking, hedge latency, markouts, caps and rebates)
+5. **3.E** Live maker model (queue tracking, hedge latency, markouts, caps)
 6. **3.F** Research: latency sensitivity, gaps, lead-lag, stale quotes
 7. **3.G** Nightly analysis + results tables + Glue + query-page examples
 8. **3.H** Daily report page

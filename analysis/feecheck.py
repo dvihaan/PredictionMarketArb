@@ -2,8 +2,8 @@
 
 The analysis uses the per-pair rates from the pairs file (Binoy's decision). This check flags where those differ
 from the venues' own published settings, so a stale or mistyped rate gets noticed:
-  Polymarket: market record feesEnabled, feeSchedule.rate (taker), feeSchedule.rebateRate (share paid to makers)
-              vs poly_fee_rate and poly_maker_rebate_share
+  Polymarket: market record feesEnabled and feeSchedule.rate (taker) vs poly_fee_rate
+              (maker rebates are left out of the analysis, Binoy 2026-11-17, so feeSchedule.rebateRate isn't checked)
   Kalshi:     series record fee_type / fee_multiplier; the standard quadratic taker fee is
               0.07 x multiplier x p x (1 - p), compared with kalshi_fee_rate
 
@@ -59,8 +59,6 @@ def check(data, d, live=False):
         enabled = pm.get("feesEnabled")
         add(p["pair_id"], "poly", "taker fee rate", p.get("poly_fee_rate"),
             None if enabled is None else (sched.get("rate") if enabled else 0.0))
-        add(p["pair_id"], "poly", "maker rebate share", p.get("poly_maker_rebate_share"),
-            sched.get("rebateRate") if enabled else None)
         km = kal.get(p["kalshi_ticker"]) or {}
         sr = series.get((km.get("event_ticker") or "").split("-")[0]) or {}
         expected = None

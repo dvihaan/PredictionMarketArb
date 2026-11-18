@@ -27,7 +27,7 @@ def jsonl_gz(rows):
 class FeeCheckTest(unittest.TestCase):
     def test_matches_differences_and_missing(self):
         pairs = [{"pair_id": "A", "kalshi_ticker": "KXA-1", "poly_yes_token": "1", "poly_market_id": "11",
-                  "kalshi_fee_rate": 0.07, "poly_fee_rate": 0.04, "poly_maker_rebate_share": 0.25},
+                  "kalshi_fee_rate": 0.07, "poly_fee_rate": 0.04},
                  {"pair_id": "B", "kalshi_ticker": "KXB-1", "poly_yes_token": "2", "poly_market_id": "22",
                   "kalshi_fee_rate": 0.07, "poly_fee_rate": 0.04}]
         with tempfile.TemporaryDirectory() as root:
@@ -44,11 +44,10 @@ class FeeCheckTest(unittest.TestCase):
             write_manifest(st)
             rows = check(open_data(root), D)
         got = {(r["pair_id"], r["venue"], r["item"].split(" (")[0]): r["ok"] for r in rows}
+        self.assertEqual(len(rows), 4)                                         # taker rates only, both venues
         self.assertEqual(got[("A", "poly", "taker fee rate")], True)
-        self.assertEqual(got[("A", "poly", "maker rebate share")], True)
         self.assertEqual(got[("A", "kalshi", "taker fee rate")], True)
         self.assertEqual(got[("B", "poly", "taker fee rate")], False)          # 0.04 vs published 0.05
-        self.assertEqual(got[("B", "poly", "maker rebate share")], False)      # missing from the pairs file
         self.assertEqual(got[("B", "kalshi", "taker fee rate")], False)        # 0.07 vs 0.07 x 0.5
 
 

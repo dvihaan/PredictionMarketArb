@@ -29,8 +29,11 @@ At each confirmed Polymarket mismatch the REST book is applied as a "rest_repair
 back until their repair is seen, so a file is not strictly in time order: sort by ts_ms when reading.
 
 Trade rows carry recv_ms, our receive time, where known: Kalshi WebSocket trades, and Polymarket REST
-trades matched to a WebSocket last_trade_price print (same YES token and price, within 2 s). Otherwise
-NULL, and ts_ms (the venue's time; one-second resolution for Polymarket) is the only timing.
+trades whose settlement transaction (tx_hash) printed on the WebSocket feed (last_trade_price, same YES
+token): the earliest such print. Only YES tokens are subscribed and NO-token trades never print there, so
+those stay NULL; ts_ms (the venue's time; one-second resolution for Polymarket) is then the only timing.
+REST rows recorded before tx_hash was kept fall back to matching a print by YES price within 2 s, which
+times far fewer trades (REST prices are averaged per taker order, prints are per fill).
 """
 import argparse
 import heapq
@@ -53,7 +56,7 @@ MAX_CATCH_UP = 7
 ROW_GROUP = 20_000
 REPAIR_LOOKBACK_MS = 15_000     # the confirming REST fetch is a few seconds before the mismatch event
 
-PRINT_MATCH_MS = 2_000          # a Polymarket REST trade matches a WebSocket print within this many ms
+PRINT_MATCH_MS = 2_000          # price fallback: a REST trade without tx_hash matches a print within this many ms
 
 LEVELS = pa.list_(pa.struct([("price", pa.float64()), ("size", pa.float64())]))
 SUSPECT_LEVELS = pa.list_(pa.struct([("side", pa.string()), ("price", pa.float64())]))
@@ -62,7 +65,7 @@ BOOKS_SCHEMA = pa.schema([("ts_ms", pa.int64()), ("server_ms", pa.int64()), ("ma
                           ("suspect", pa.bool_()), ("suspect_levels", SUSPECT_LEVELS)])
 TRADES_SCHEMA = pa.schema([("trade_id", pa.string()), ("market", pa.string()), ("ts_ms", pa.int64()),
                            ("yes_price", pa.float64()), ("size", pa.float64()), ("taker", pa.string()),
-                           ("source", pa.string()), ("recv_ms", pa.int64())])
+                           ("source", pa.string()), ("recv_ms", pa.int64()), ("tx_hash", pa.string())])
 COVERAGE_SCHEMA = pa.schema([("recv_ms", pa.int64()), ("venue", pa.string()), ("event", pa.string()),
                              ("detail", pa.string())])
 
@@ -174,7 +177,7 @@ def kalshi_trade(msg, recv_ms=None):
     book_side = msg.get("taker_book_side") or {"yes": "bid", "no": "ask"}[msg["taker_side"]]
     return dict(trade_id=msg["trade_id"], market=msg["market_ticker"], ts_ms=int(msg["ts_ms"]),
                 yes_price=float(msg["yes_price_dollars"]), size=float(msg["count_fp"]),
-                taker="buy_yes" if book_side == "bid" else "sell_yes", source="ws", recv_ms=recv_ms)
+                taker="buy_yes" if book_side == "bid" else "sell_yes", source="ws", recv_ms=recv_ms, tx_hash=None)
 
 
 def process_kalshi(store, d, books, coverage, out, trades):
@@ -270,7 +273,7 @@ def wrong_levels(local, rest):
 def process_poly(store, d, books, coverage, out):
     """Replay one day of Polymarket messages. books (YES token -> PolyBook) is updated in place.
 
-    Returns the day's WebSocket trade prints as [(recv_ms, token, price, ts_ms)], for timing REST trades.
+    Returns the day's WebSocket trade prints as [(recv_ms, token, price, ts_ms, tx_hash)], for timing REST trades.
     Rows inside a token's suspect window are held until that token's repair, so they can be stamped with
     the levels that turned out to be wrong; rows still held at the end of the day get suspect_levels NULL.
     """
@@ -327,31 +330,46 @@ def process_poly(store, d, books, coverage, out):
                 for tok in changed:
                     emit(recv, tok, ts, "delta")
             elif kind == "last_trade_price" and ev.get("timestamp"):
-                prints.append((recv, ev["asset_id"], float(ev["price"]), int(ev["timestamp"])))
+                prints.append((recv, ev["asset_id"], float(ev["price"]), int(ev["timestamp"]),
+                               ev.get("transaction_hash")))
     for tok in list(held):
         release(tok, float("inf"), None)      # no repair seen today: which levels were wrong is unknown
     return prints
 
 
 def time_poly_trades(rows, prints):
-    """Give Polymarket REST trades our receive time when a WebSocket print matches: same YES token, same
-    YES price, within PRINT_MATCH_MS. Each print is used once. REST prices are per taker order (averaged
-    over fills) and prints are per fill, so only some trades match; the rest keep recv_ms NULL."""
+    """Give Polymarket REST trades our receive time from the WebSocket prints. Returns (by_hash, by_price).
+
+    A row with tx_hash gets the earliest print with the same YES token and transaction (one transaction
+    can hold several fills and several REST rows; all became public with its first print). No print, no
+    time: a NO-token trade, or a trade while the feed was down. A row without tx_hash (recorded before the
+    hash was kept) falls back to a print with the same token and YES price within PRINT_MATCH_MS, each
+    print used once; REST prices are averaged per taker order and prints are per fill, so few match."""
+    first = {}
     by_token = defaultdict(list)
-    for p in sorted(prints, key=lambda x: x[3]):
+    for p in sorted(prints, key=lambda x: (x[3], x[0])):
+        if p[4]:
+            key = (p[1], p[4])
+            first[key] = min(first.get(key, p[0]), p[0])
         by_token[p[1]].append(p)
-    used, matched = set(), 0
+    used, by_hash, by_price = set(), 0, 0
     for r in rows:
         if r.get("recv_ms") is not None:
+            continue
+        if r.get("tx_hash"):
+            recv = first.get((r["market"], r["tx_hash"]))
+            if recv is not None:
+                r["recv_ms"] = recv
+                by_hash += 1
             continue
         for p in by_token.get(r["market"], ()):
             if id(p) in used or abs(p[3] - r["ts_ms"]) > PRINT_MATCH_MS or abs(p[2] - r["yes_price"]) > 1e-6:
                 continue
             r["recv_ms"] = p[0]
             used.add(id(p))
-            matched += 1
+            by_price += 1
             break
-    return matched
+    return by_hash, by_price
 
 
 # ---- trades and coverage -----------------------------------------------------------------------
@@ -361,7 +379,7 @@ def rest_trades(store, d):
     for r in raw_records(store, "trades", d):
         out[r["venue"]].append(dict(trade_id=r["trade_id"], market=r["market"], ts_ms=int(r["ts_ms"]),
                                     yes_price=float(r["yes_price"]), size=float(r["size"]), taker=r["taker"],
-                                    source="rest", recv_ms=None))
+                                    source="rest", recv_ms=None, tx_hash=r.get("tx_hash")))
     return out
 
 
@@ -378,14 +396,15 @@ def upsert_trades(store, venue, rows):
             for r in pq.read_table(io.BytesIO(store.read(key))).to_pylist():
                 merged[r["trade_id"]] = r
         for r in new:
-            r = {**r, "recv_ms": r.get("recv_ms")}
+            r = {**r, "recv_ms": r.get("recv_ms"), "tx_hash": r.get("tx_hash")}
             old = merged.get(r["trade_id"])
             # REST rows win over WebSocket rows for the same trade; otherwise first seen wins.
-            # A known receive time is kept whichever row wins (WebSocket rows have it, REST rows usually don't).
+            # A known receive time and transaction hash are kept whichever row wins (WebSocket rows have the
+            # receive time, REST rows usually don't; rows recorded before the hash was kept don't have it).
             winner = r if old is None or (r["source"] == "rest" and old["source"] != "rest") else old
-            other = old if winner is r else r
-            recv = winner.get("recv_ms") if winner.get("recv_ms") is not None else (other or {}).get("recv_ms")
-            merged[r["trade_id"]] = {**winner, "recv_ms": recv}
+            other = (old if winner is r else r) or {}
+            merged[r["trade_id"]] = {**winner, **{k: winner.get(k) if winner.get(k) is not None else other.get(k)
+                                                  for k in ("recv_ms", "tx_hash")}}
         rows_sorted = sorted(merged.values(), key=lambda r: (r["ts_ms"], r["trade_id"]))
         buf = io.BytesIO()
         pq.write_table(pa.Table.from_pylist(rows_sorted, schema=TRADES_SCHEMA), buf, compression="zstd")
@@ -440,7 +459,7 @@ def process_day(store, d, log=print, depth=0, today=None):
         data = out.finish()
         store.write(f"curated/books/venue={venue}/date={d}/part-0.parquet", data)
         summary[venue] = (out.rows, len(data))
-    timed = time_poly_trades(trades.get("poly", []), prints)
+    by_hash, by_price = time_poly_trades(trades.get("poly", []), prints)
     n_trades = {v: upsert_trades(store, v, rows) for v, rows in trades.items()}
     complete = d < today
     if complete:
@@ -448,7 +467,8 @@ def process_day(store, d, log=print, depth=0, today=None):
     log(f"{d}: kalshi {summary['kalshi'][0]} book rows ({summary['kalshi'][1] / 1e6:.1f} MB), "
         f"poly {summary['poly'][0]} book rows ({summary['poly'][1] / 1e6:.1f} MB), "
         f"{n_cov} coverage events, trades written {n_trades} "
-        f"(Polymarket REST trades timed by a print: {timed} of {len(trades.get('poly', []))}), "
+        f"(Polymarket REST trades timed by a print: {by_hash + by_price} of {len(trades.get('poly', []))}"
+        + (f", {by_price} by the price fallback" if by_price else "") + "), "
         f"{time.monotonic() - started:.0f} s"
         + ("" if complete else " (day in progress: end-of-day books not saved)"))
 

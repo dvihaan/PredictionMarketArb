@@ -1,4 +1,4 @@
-"""Periodic REST trade backfill for the recorded pairs, reusing record.py's fetchers.
+"""Periodic REST trade backfill for the recorded pairs, using rest_trades.py's fetchers.
 
 Both venues publish full trade history, so trades don't depend on a live connection: each poll
 fetches everything since the last covered time per market. Marks are kept in a small state file;
@@ -14,7 +14,7 @@ import requests
 
 from recorder import rest_trades as record   # fetchers moved unchanged from deprecated/record.py
 
-FIELDS = ("venue", "trade_id", "market", "ts_ms", "yes_price", "size", "taker")
+FIELDS = ("venue", "trade_id", "market", "ts_ms", "yes_price", "size", "taker", "tx_hash")
 
 
 def now_ms():
